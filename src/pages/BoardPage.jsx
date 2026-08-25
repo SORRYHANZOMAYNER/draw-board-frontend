@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom'
 import Canvas from '../components/Canvas.jsx'
 import StickerLayer from '../components/StickerLayer.jsx'
 import Toolbar from '../components/Toolbar.jsx'
+import ContextMenu from '../components/ContextMenu.jsx'
 import { useWebSocket } from '../hooks/useWebSocket.js'
 import {
   DEFAULT_STICKER_HEIGHT,
@@ -16,8 +17,8 @@ function normalizeStickerFields(event, previous = null) {
     stickerId: event.stickerId,
     x: event.x != null ? event.x : (previous?.x ?? 0),
     y: event.y != null ? event.y : (previous?.y ?? 0),
-    width: event.width > 0 ? event.width : (previous?.width ?? DEFAULT_STICKER_WIDTH),
-    height: event.height > 0 ? event.height : (previous?.height ?? DEFAULT_STICKER_HEIGHT),
+    width: event.width > 0.01 ? event.width : (previous?.width ?? DEFAULT_STICKER_WIDTH),
+    height: event.height > 0.01 ? event.height : (previous?.height ?? DEFAULT_STICKER_HEIGHT),
     text: event.text != null ? event.text : (previous?.text ?? ''),
     color: event.color ?? previous?.color ?? STICKER_COLORS[0],
   }
@@ -43,6 +44,10 @@ function buildStickerMap(events) {
     if (event.type === 'STICKER_TEXT') {
       sticker.text = event.text ?? ''
     }
+
+    if (event.type === 'STICKER_DELETE') {
+      stickers.delete(event.stickerId)
+    }
   }
 
   return stickers
@@ -60,7 +65,9 @@ export default function BoardPage() {
   const [stickers, setStickers] = useState(() => new Map())
   const [selectedStickerId, setSelectedStickerId] = useState(null)
   const [focusStickerId, setFocusStickerId] = useState(null)
+  const [contextMenu, setContextMenu] = useState(null)
 
+  const selectedImageIdRef = useRef(null)
   const stickersRef = useRef(stickers)
   const dragOriginRef = useRef(null)
   const textDraftRef = useRef(new Map())
@@ -74,6 +81,17 @@ export default function BoardPage() {
   }, [stickers])
 
   const applyStickerEvent = useCallback((event) => {
+    if (event.type === 'STICKER_DELETE') {
+      if (!event.stickerId) return
+      setStickers((prev) => {
+        if (!prev.has(event.stickerId)) return prev
+        const next = new Map(prev)
+        next.delete(event.stickerId)
+        return next
+      })
+      return
+    }
+
     if (event.type === 'STICKER_ADD') {
       if (!event.stickerId) return
 
@@ -139,7 +157,6 @@ export default function BoardPage() {
 
         setSnapshotEvents(events)
 
-        // Не затираем стикеры, добавленные до завершения snapshot
         setStickers((prev) => {
           const fromSnapshot = buildStickerMap(events)
           if (prev.size === 0) return fromSnapshot
@@ -168,6 +185,87 @@ export default function BoardPage() {
   const persistStickerEvent = useCallback((event) => {
     sendDraw(event)
   }, [sendDraw])
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null)
+  }, [])
+
+  const deleteSticker = useCallback((stickerId) => {
+    if (!stickerId) return
+
+    const event = { type: 'STICKER_DELETE', stickerId }
+    applyStickerEvent(event)
+    persistStickerEvent(event)
+    setSelectedStickerId((current) => (current === stickerId ? null : current))
+    setFocusStickerId((current) => (current === stickerId ? null : current))
+    closeContextMenu()
+  }, [applyStickerEvent, persistStickerEvent, closeContextMenu])
+
+  const deleteSelectedImage = useCallback(() => {
+    const deleted = canvasRef.current?.deleteSelectedImage()
+    if (deleted) {
+      setSelectedStickerId(null)
+      setFocusStickerId(null)
+      closeContextMenu()
+    }
+    return deleted
+  }, [closeContextMenu])
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedStickerId) {
+      deleteSticker(selectedStickerId)
+      return
+    }
+    deleteSelectedImage()
+  }, [selectedStickerId, deleteSticker, deleteSelectedImage])
+
+  const handleImageSelectionChange = useCallback((imageId) => {
+    selectedImageIdRef.current = imageId
+    if (imageId) {
+      setSelectedStickerId(null)
+      setFocusStickerId(null)
+    }
+  }, [])
+
+  const handleSelectSticker = useCallback((stickerId) => {
+    setSelectedStickerId(stickerId)
+    canvasRef.current?.clearSelection()
+  }, [])
+
+  const handleStickerContextMenu = useCallback((stickerId, x, y) => {
+    setSelectedStickerId(stickerId)
+    canvasRef.current?.clearSelection()
+    setContextMenu({ type: 'sticker', targetId: stickerId, x, y })
+  }, [])
+
+  const handleImageContextMenu = useCallback(({ x, y }) => {
+    setSelectedStickerId(null)
+    setFocusStickerId(null)
+    setContextMenu({ type: 'image', x, y })
+  }, [])
+
+  const handleContextMenuDelete = useCallback(() => {
+    if (contextMenu?.type === 'sticker') {
+      deleteSticker(contextMenu.targetId)
+      return
+    }
+    deleteSelectedImage()
+  }, [contextMenu, deleteSticker, deleteSelectedImage])
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Delete') return
+
+      const tag = e.target?.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return
+
+      e.preventDefault()
+      handleDeleteSelected()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleDeleteSelected])
 
   const handleBoardClick = useCallback((norm) => {
     if (loading || mode !== 'sticker') return
@@ -285,6 +383,7 @@ export default function BoardPage() {
 
   const handleModeChange = (nextMode) => {
     setMode(nextMode)
+    closeContextMenu()
     if (nextMode !== 'select') {
       setSelectedStickerId(null)
       setFocusStickerId(null)
@@ -292,7 +391,7 @@ export default function BoardPage() {
   }
 
   return (
-    <div className="board-page">
+    <div className="board-page" onClick={closeContextMenu}>
       <header className="board-header">
         <div className="board-header-top">
           <h2 className="board-title">Комната #{roomId}</h2>
@@ -334,6 +433,8 @@ export default function BoardPage() {
             registerRemoteHandler={registerRemoteHandler}
             onCameraChange={setCamera}
             onBoardClick={handleBoardClick}
+            onImageSelectionChange={handleImageSelectionChange}
+            onImageContextMenu={handleImageContextMenu}
           />
 
           <StickerLayer
@@ -342,15 +443,25 @@ export default function BoardPage() {
             mode={mode}
             selectedStickerId={selectedStickerId}
             focusStickerId={focusStickerId}
-            onSelectSticker={setSelectedStickerId}
+            onSelectSticker={handleSelectSticker}
             onStickerTextChange={handleStickerTextChange}
             onStickerTextCommit={handleStickerTextCommit}
             onStickerMoveStart={handleStickerMoveStart}
             onStickerMove={handleStickerMove}
             onStickerMoveEnd={handleStickerMoveEnd}
+            onStickerContextMenu={handleStickerContextMenu}
           />
         </div>
       </div>
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onDelete={handleContextMenuDelete}
+          onClose={closeContextMenu}
+        />
+      )}
 
       <input
         ref={fileInputRef}

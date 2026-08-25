@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { WORLD_WIDTH, WORLD_HEIGHT, MIN_STICKER_SCREEN_PX } from '../constants/board.js'
+import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants/board.js'
 import '../styles/StickerNote.css'
 
 export default function StickerNote({
@@ -14,15 +14,21 @@ export default function StickerNote({
   onMoveStart,
   onMove,
   onMoveEnd,
+  onContextMenu,
 }) {
-    const textareaRef = useRef(null)
-    const dragRef = useRef(null)
-    const zoom = camera.zoom > 0 ? camera.zoom : 0.01
-    const left = (sticker.x * WORLD_WIDTH - camera.x) * zoom
-    const top = (sticker.y * WORLD_HEIGHT - camera.y) * zoom
-    const width = Math.max(MIN_STICKER_SCREEN_PX, sticker.width * WORLD_WIDTH * zoom)
-    const height = Math.max(MIN_STICKER_SCREEN_PX, sticker.height * WORLD_HEIGHT * zoom)
-    const fontSize = Math.max(16, Math.min(20, width * 0.09))
+  const textareaRef = useRef(null)
+  const dragRef = useRef(null)
+
+  const zoom = camera.zoom > 0 ? camera.zoom : 0.01
+  const left = (sticker.x * WORLD_WIDTH - camera.x) * zoom
+  const top = (sticker.y * WORLD_HEIGHT - camera.y) * zoom
+  const width = sticker.width * WORLD_WIDTH * zoom
+  const height = sticker.height * WORLD_HEIGHT * zoom
+  const fontSize = Math.max(11, Math.min(20, width * 0.14))
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) || width < 4 || height < 4) {
+    return null
+  }
 
   useEffect(() => {
     if (!autoFocus) return
@@ -37,11 +43,14 @@ export default function StickerNote({
 
   const handleDragPointerDown = (e) => {
     if (!draggable) return
-    if (e.button !== 0 && e.pointerType === 'mouse') return
     if (e.target.closest('textarea')) return
+    if (e.button !== 0 && e.pointerType === 'mouse') return
+
     e.stopPropagation()
     e.preventDefault()
+    textareaRef.current?.blur()
     onSelect?.()
+
     dragRef.current = {
       pointerId: e.pointerId,
       startClientX: e.clientX,
@@ -56,10 +65,10 @@ export default function StickerNote({
     const drag = dragRef.current
     if (!drag || drag.pointerId !== e.pointerId) return
 
-    const dx = (e.clientX - drag.startClientX) / camera.zoom / WORLD_WIDTH
-    const dy = (e.clientY - drag.startClientY) / camera.zoom / WORLD_HEIGHT
+    const dx = (e.clientX - drag.startClientX) / zoom / WORLD_WIDTH
+    const dy = (e.clientY - drag.startClientY) / zoom / WORLD_HEIGHT
 
-    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+    if (Math.abs(dx) > 0.0005 || Math.abs(dy) > 0.0005) {
       drag.moved = true
     }
 
@@ -85,13 +94,16 @@ export default function StickerNote({
     onSelect?.()
   }
 
-  const handleTextareaFocus = () => {
+  const handleContextMenu = (e) => {
+    e.preventDefault()
+    e.stopPropagation()
     onSelect?.()
+    onContextMenu?.(e.clientX, e.clientY)
   }
 
   return (
     <div
-      className={`sticker-note${isSelected ? ' selected' : ''}`}
+      className={`sticker-note${isSelected ? ' selected' : ''}${draggable ? ' draggable' : ''}`}
       style={{
         left,
         top,
@@ -99,15 +111,15 @@ export default function StickerNote({
         height,
         backgroundColor: sticker.color,
       }}
+      onPointerDown={handleDragPointerDown}
+      onPointerMove={handleDragPointerMove}
+      onPointerUp={handleDragPointerUp}
+      onPointerCancel={handleDragPointerUp}
+      onContextMenu={handleContextMenu}
     >
-      <div
-        className={`sticker-note${isSelected ? ' selected' : ''}${draggable ? ' draggable' : ''}`}
-        style={{ left, top, width, height, backgroundColor: sticker.color }}
-        onPointerDown={handleDragPointerDown}
-        onPointerMove={handleDragPointerMove}
-        onPointerUp={handleDragPointerUp}
-        onPointerCancel={handleDragPointerUp}
-      />
+      <div className="sticker-drag-handle" aria-hidden="true">
+        <span className="sticker-grip">⠿</span>
+      </div>
 
       <textarea
         ref={textareaRef}
@@ -123,7 +135,7 @@ export default function StickerNote({
         onChange={(e) => onTextChange?.(e.target.value)}
         onBlur={() => onTextCommit?.()}
         onPointerDown={handleTextareaPointerDown}
-        onFocus={handleTextareaFocus}
+        onFocus={() => onSelect?.()}
       />
     </div>
   )

@@ -13,6 +13,7 @@ export default function StickerLayer({
   onStickerMoveStart,
   onStickerMove,
   onStickerMoveEnd,
+  onStickerContextMenu,
 }) {
   const stickerList = [...stickers.values()]
 
@@ -32,6 +33,7 @@ export default function StickerLayer({
           onMoveStart={() => onStickerMoveStart?.(sticker.stickerId)}
           onMove={(dx, dy) => onStickerMove?.(sticker.stickerId, dx, dy)}
           onMoveEnd={() => onStickerMoveEnd?.(sticker.stickerId)}
+          onContextMenu={(x, y) => onStickerContextMenu?.(sticker.stickerId, x, y)}
         />
       ))}
 

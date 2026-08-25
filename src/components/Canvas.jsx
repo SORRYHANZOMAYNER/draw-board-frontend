@@ -38,6 +38,8 @@ const Canvas = forwardRef(function Canvas(
     registerRemoteHandler,
     onCameraChange,
     onBoardClick,
+    onImageSelectionChange,
+    onImageContextMenu,
   },
   ref
 ) {
@@ -70,12 +72,14 @@ const Canvas = forwardRef(function Canvas(
   const setSelection = useCallback((imageId) => {
     selectedImageIdRef.current = imageId
     setSelectedImageId(imageId)
-  }, [])
+    onImageSelectionChange?.(imageId)
+  }, [onImageSelectionChange])
 
   const clearSelection = useCallback(() => {
     selectedImageIdRef.current = null
     setSelectedImageId(null)
-  }, [])
+    onImageSelectionChange?.(null)
+  }, [onImageSelectionChange])
 
   useEffect(() => {
     if (mode === 'draw') {
@@ -188,7 +192,12 @@ const Canvas = forwardRef(function Canvas(
     })
   }, [])
 
-  const applyStrokeEvent = useCallback((event) => {
+  const drawImagesOnTop = useCallback(() => {
+    drawImages()
+    drawSelection()
+  }, [drawImages, drawSelection])
+
+  const applyStrokeEvent = useCallback((event, { refreshImages = false } = {}) => {
     const { type, strokeId: id, x, y, color, width } = event
 
     if (type === 'STROKE_START') {
@@ -202,13 +211,16 @@ const Canvas = forwardRef(function Canvas(
       drawSegmentWorld(stroke.lastX, stroke.lastY, x, y, stroke.color, stroke.width)
       stroke.lastX = x
       stroke.lastY = y
+      if (refreshImages) {
+        drawImagesOnTop()
+      }
       return
     }
 
     if (type === 'STROKE_END') {
       strokes.current.delete(id)
     }
-  }, [drawSegmentWorld])
+  }, [drawSegmentWorld, drawImagesOnTop])
 
   const applyImageAdd = useCallback(async (event) => {
     const imgObj = {
@@ -240,6 +252,13 @@ const Canvas = forwardRef(function Canvas(
     if (event.imageHeight != null) img.imageHeight = event.imageHeight
   }, [])
 
+  const applyImageDelete = useCallback((event) => {
+    imagesRef.current.delete(event.imageId)
+    if (selectedImageIdRef.current === event.imageId) {
+      clearSelection()
+    }
+  }, [clearSelection])
+
   const redrawAll = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
@@ -250,15 +269,14 @@ const Canvas = forwardRef(function Canvas(
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     strokes.current.clear()
-    drawImages()
 
     allEventsRef.current.forEach((event) => {
       if (event.type.startsWith('IMAGE_')) return
       applyStrokeEvent(event)
     })
 
-    drawSelection()
-  }, [drawImages, applyStrokeEvent, drawSelection])
+    drawImagesOnTop()
+  }, [applyStrokeEvent, drawImagesOnTop])
 
   useEffect(() => {
     redrawAllRef.current = redrawAll
@@ -310,9 +328,16 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
+    if (event.type === 'IMAGE_DELETE') {
+      if (persist) allEventsRef.current.push(event)
+      applyImageDelete(event)
+      redrawAllRef.current()
+      return
+    }
+
     if (persist) allEventsRef.current.push(event)
-    applyStrokeEvent(event)
-  }, [applyImageAdd, applyImageMove, applyImageResize, applyStrokeEvent])
+    applyStrokeEvent(event, { refreshImages: true })
+  }, [applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, applyStrokeEvent])
 
   useEffect(() => {
     registerRemoteHandler?.((event) => handleEvent(event))
@@ -337,6 +362,9 @@ const Canvas = forwardRef(function Canvas(
         } else if (event.type === 'IMAGE_RESIZE') {
           allEventsRef.current.push(event)
           applyImageResize(event)
+        } else if (event.type === 'IMAGE_DELETE') {
+          allEventsRef.current.push(event)
+          applyImageDelete(event)
         } else {
           allEventsRef.current.push(event)
         }
@@ -345,7 +373,7 @@ const Canvas = forwardRef(function Canvas(
     }
 
     loadSnapshot()
-  }, [snapshotEvents, applyImageAdd, applyImageMove, applyImageResize, clearSelection])
+  }, [snapshotEvents, applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, clearSelection])
 
   useEffect(() => {
     const container = containerRef.current
@@ -637,12 +665,34 @@ const Canvas = forwardRef(function Canvas(
           imageHeight: img.imageHeight,
         })
       }
-
-      clearSelection()
     }
 
     dragRef.current = null
     redrawAllRef.current()
+  }
+
+  const deleteImageById = useCallback((imageId) => {
+    if (!imageId || !imagesRef.current.has(imageId)) return false
+
+    applyImageDelete({ imageId })
+    allEventsRef.current.push({ type: 'IMAGE_DELETE', imageId })
+    sendDraw({ type: 'IMAGE_DELETE', imageId })
+    redrawAllRef.current()
+    return true
+  }, [applyImageDelete, sendDraw])
+
+  const handleCanvasContextMenu = (e) => {
+    e.preventDefault()
+    if (mode !== 'select') return
+
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    const hitId = hitTestImage(norm.x, norm.y) || selectedImageIdRef.current
+
+    if (!hitId) return
+
+    setSelection(hitId)
+    onImageContextMenu?.({ imageId: hitId, x: e.clientX, y: e.clientY })
   }
 
   const handleMouseDown = (e) => {
@@ -887,7 +937,14 @@ const Canvas = forwardRef(function Canvas(
     zoomOut,
     resetView,
     importImageFile,
-  }), [importImageFile])
+    getSelectedImageId: () => selectedImageIdRef.current,
+    clearSelection,
+    deleteSelectedImage: () => {
+      const imageId = selectedImageIdRef.current
+      return imageId ? deleteImageById(imageId) : false
+    },
+    deleteImageById,
+  }), [importImageFile, clearSelection, deleteImageById])
 
   return (
     <div
@@ -915,7 +972,7 @@ const Canvas = forwardRef(function Canvas(
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onContextMenu={(e) => e.preventDefault()}
+        onContextMenu={handleCanvasContextMenu}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
