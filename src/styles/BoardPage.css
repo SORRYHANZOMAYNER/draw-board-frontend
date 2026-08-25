@@ -75,7 +75,13 @@
 .board-loading {
   color: #666;
 }
-
+.board-canvas-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .board-workspace {
   position: relative;
   flex: 1;

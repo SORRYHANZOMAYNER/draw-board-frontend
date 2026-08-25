@@ -130,15 +130,31 @@ export default function BoardPage() {
   const { sendDraw, connected } = useWebSocket(roomId, onMessage)
 
   useEffect(() => {
+    let cancelled = false
     setLoading(true)
+
     fetch(`http://localhost:8080/room/${roomId}/snapshot`)
       .then((response) => response.json())
       .then((events) => {
+        if (cancelled) return
+
         setSnapshotEvents(events)
-        setStickers(buildStickerMap(events))
+
+        setStickers((prev) => {
+          const fromSnapshot = buildStickerMap(events)
+          if (prev.size === 0) return fromSnapshot
+
+          const merged = new Map(fromSnapshot)
+          prev.forEach((sticker, id) => merged.set(id, sticker))
+          return merged
+        })
       })
       .catch((error) => console.error('Snapshot error', error))
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
   }, [roomId])
 
   useEffect(() => {
@@ -152,8 +168,8 @@ export default function BoardPage() {
   }, [sendDraw])
 
   const handleBoardClick = useCallback((norm) => {
-    if (mode !== 'sticker') return
-
+    if (loading || mode !== 'sticker') return
+    
     const stickerId = crypto.randomUUID()
     const color = STICKER_COLORS[stickersRef.current.size % STICKER_COLORS.length]
     const event = {

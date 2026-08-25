@@ -15,14 +15,14 @@ export default function StickerNote({
   onMove,
   onMoveEnd,
 }) {
-  const textareaRef = useRef(null)
-  const dragRef = useRef(null)
-
-  const left = (sticker.x * WORLD_WIDTH - camera.x) * camera.zoom
-  const top = (sticker.y * WORLD_HEIGHT - camera.y) * camera.zoom
-  const width = sticker.width * WORLD_WIDTH * camera.zoom
-  const height = sticker.height * WORLD_HEIGHT * camera.zoom
-  const fontSize = Math.max(16, Math.min(20, width * 0.09))
+    const textareaRef = useRef(null)
+    const dragRef = useRef(null)
+    const zoom = camera.zoom > 0 ? camera.zoom : 0.01
+    const left = (sticker.x * WORLD_WIDTH - camera.x) * zoom
+    const top = (sticker.y * WORLD_HEIGHT - camera.y) * zoom
+    const width = Math.max(MIN_STICKER_SCREEN_PX, sticker.width * WORLD_WIDTH * zoom)
+    const height = Math.max(MIN_STICKER_SCREEN_PX, sticker.height * WORLD_HEIGHT * zoom)
+    const fontSize = Math.max(16, Math.min(20, width * 0.09))
 
   useEffect(() => {
     if (!autoFocus) return

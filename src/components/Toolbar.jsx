@@ -1,29 +1,79 @@
 import '../styles/Toolbar.css'
-
-function StickerIcon() {
-  return (
-    <svg
-      className="toolbar-icon"
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path
-        fill="currentColor"
-        d="M5 3h12a2 2 0 0 1 2 2v13.5L14.5 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
-      />
-      <path
-        fill="currentColor"
-        opacity="0.35"
-        d="M19 5.5V15l-4.5-4.5H19V5.5Z"
-      />
-    </svg>
-  )
-}
+import stickerIcon from '../assets/sticky-note-plus.svg'  
 
 const TOOLS = [
   { id: 'select', icon: '↖', title: 'Выбор' },
   { id: 'draw', icon: '✏', title: 'Рисовать' },
-  { id: 'sticker', icon: <StickerIcon />, title: 'Стикер' },
+  {
+    id: 'sticker',
+    icon: <img src={stickerIcon} alt="" className="toolbar-icon-img" />,
+    title: 'Стикер',
+  },
   { id: 'image', icon: '🖼', title: 'Картинка', action: true },
 ]
+
+const VIEW_TOOLS = [
+  { id: 'zoom-in', icon: '+', title: 'Приблизить' },
+  { id: 'zoom-out', icon: '−', title: 'Отдалить' },
+  { id: 'reset', icon: '⌂', title: 'Сбросить вид' },
+]
+
+export default function Toolbar({
+  mode,
+  onModeChange,
+  onZoomIn,
+  onZoomOut,
+  onResetView,
+  onImageUpload,
+}) {
+  const handleToolClick = (tool) => {
+    if (tool.action && tool.id === 'image') {
+      onImageUpload?.()
+      return
+    }
+    onModeChange?.(tool.id)
+  }
+
+  const handleViewClick = (tool) => {
+    if (tool.id === 'zoom-in') onZoomIn?.()
+    if (tool.id === 'zoom-out') onZoomOut?.()
+    if (tool.id === 'reset') onResetView?.()
+  }
+
+  return (
+    <aside className="toolbar" aria-label="Панель инструментов">
+      <div className="toolbar-group">
+        {TOOLS.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            className={`toolbar-btn${!tool.action && mode === tool.id ? ' active' : ''}`}
+            title={tool.title}
+            aria-label={tool.title}
+            aria-pressed={!tool.action && mode === tool.id}
+            onClick={() => handleToolClick(tool)}
+          >
+            {tool.icon}
+          </button>
+        ))}
+      </div>
+
+      <div className="toolbar-divider" />
+
+      <div className="toolbar-group">
+        {VIEW_TOOLS.map((tool) => (
+          <button
+            key={tool.id}
+            type="button"
+            className="toolbar-btn"
+            title={tool.title}
+            aria-label={tool.title}
+            onClick={() => handleViewClick(tool)}
+          >
+            <span className="toolbar-btn-label">{tool.icon}</span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
+}
