@@ -11,20 +11,24 @@ import {
 } from '../constants/board.js'
 import '../styles/BoardPage.css'
 
+function normalizeStickerFields(event, previous = null) {
+  return {
+    stickerId: event.stickerId,
+    x: event.x != null ? event.x : (previous?.x ?? 0),
+    y: event.y != null ? event.y : (previous?.y ?? 0),
+    width: event.width > 0 ? event.width : (previous?.width ?? DEFAULT_STICKER_WIDTH),
+    height: event.height > 0 ? event.height : (previous?.height ?? DEFAULT_STICKER_HEIGHT),
+    text: event.text != null ? event.text : (previous?.text ?? ''),
+    color: event.color ?? previous?.color ?? STICKER_COLORS[0],
+  }
+}
+
 function buildStickerMap(events) {
   const stickers = new Map()
 
   for (const event of events) {
     if (event.type === 'STICKER_ADD') {
-      stickers.set(event.stickerId, {
-        stickerId: event.stickerId,
-        x: event.x,
-        y: event.y,
-        width: event.width ?? DEFAULT_STICKER_WIDTH,
-        height: event.height ?? DEFAULT_STICKER_HEIGHT,
-        text: event.text ?? '',
-        color: event.color ?? STICKER_COLORS[0],
-      })
+      stickers.set(event.stickerId, normalizeStickerFields(event))
       continue
     }
 
@@ -71,17 +75,12 @@ export default function BoardPage() {
 
   const applyStickerEvent = useCallback((event) => {
     if (event.type === 'STICKER_ADD') {
+      if (!event.stickerId) return
+
       setStickers((prev) => {
         const next = new Map(prev)
-        next.set(event.stickerId, {
-          stickerId: event.stickerId,
-          x: event.x,
-          y: event.y,
-          width: event.width ?? DEFAULT_STICKER_WIDTH,
-          height: event.height ?? DEFAULT_STICKER_HEIGHT,
-          text: event.text ?? '',
-          color: event.color ?? STICKER_COLORS[0],
-        })
+        const previous = prev.get(event.stickerId)
+        next.set(event.stickerId, normalizeStickerFields(event, previous))
         return next
       })
       return
@@ -95,12 +94,12 @@ export default function BoardPage() {
       const updated = { ...sticker }
 
       if (event.type === 'STICKER_MOVE') {
-        updated.x = event.x
-        updated.y = event.y
+        if (event.x != null) updated.x = event.x
+        if (event.y != null) updated.y = event.y
       }
 
       if (event.type === 'STICKER_TEXT') {
-        updated.text = event.text ?? ''
+        if (event.text != null) updated.text = event.text
       }
 
       next.set(event.stickerId, updated)
@@ -140,6 +139,7 @@ export default function BoardPage() {
 
         setSnapshotEvents(events)
 
+        // Не затираем стикеры, добавленные до завершения snapshot
         setStickers((prev) => {
           const fromSnapshot = buildStickerMap(events)
           if (prev.size === 0) return fromSnapshot
@@ -154,7 +154,9 @@ export default function BoardPage() {
         if (!cancelled) setLoading(false)
       })
 
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+    }
   }, [roomId])
 
   useEffect(() => {
@@ -169,7 +171,7 @@ export default function BoardPage() {
 
   const handleBoardClick = useCallback((norm) => {
     if (loading || mode !== 'sticker') return
-    
+
     const stickerId = crypto.randomUUID()
     const color = STICKER_COLORS[stickersRef.current.size % STICKER_COLORS.length]
     const event = {
@@ -188,7 +190,7 @@ export default function BoardPage() {
     setSelectedStickerId(stickerId)
     setFocusStickerId(stickerId)
     setMode('select')
-  }, [mode, applyStickerEvent, persistStickerEvent])
+  }, [loading, mode, applyStickerEvent, persistStickerEvent])
 
   const handleStickerTextChange = useCallback((stickerId, text) => {
     setStickers((prev) => {

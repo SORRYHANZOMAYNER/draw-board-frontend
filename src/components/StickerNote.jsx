@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants/board.js'
+import { WORLD_WIDTH, WORLD_HEIGHT, MIN_STICKER_SCREEN_PX } from '../constants/board.js'
 import '../styles/StickerNote.css'
 
 export default function StickerNote({
@@ -38,6 +38,7 @@ export default function StickerNote({
   const handleDragPointerDown = (e) => {
     if (!draggable) return
     if (e.button !== 0 && e.pointerType === 'mouse') return
+    if (e.target.closest('textarea')) return
     e.stopPropagation()
     e.preventDefault()
     onSelect?.()
@@ -100,8 +101,8 @@ export default function StickerNote({
       }}
     >
       <div
-        className="sticker-drag-handle"
-        aria-hidden="true"
+        className={`sticker-note${isSelected ? ' selected' : ''}${draggable ? ' draggable' : ''}`}
+        style={{ left, top, width, height, backgroundColor: sticker.color }}
         onPointerDown={handleDragPointerDown}
         onPointerMove={handleDragPointerMove}
         onPointerUp={handleDragPointerUp}
