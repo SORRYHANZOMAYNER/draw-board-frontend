@@ -1,0 +1,30 @@
+.sticker-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.sticker-mode-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: rgba(37, 99, 235, 0.92);
+  color: #fff;
+  font-size: 14px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .sticker-mode-hint {
+    bottom: 12px;
+    max-width: calc(100% - 24px);
+    white-space: normal;
+    text-align: center;
+  }
+}

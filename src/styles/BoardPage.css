@@ -1,0 +1,89 @@
+.board-page {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f0f0f0;
+}
+
+.board-header {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.board-header-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.board-title {
+  margin: 0;
+  font-size: clamp(16px, 4vw, 24px);
+}
+
+.board-status {
+  color: #ea580c;
+  font-weight: 600;
+}
+
+.board-status.connected {
+  color: #16a34a;
+}
+
+.board-link-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.board-link-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.board-copy-btn {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+.board-warning,
+.board-loading {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.board-warning {
+  color: #ea580c;
+}
+
+.board-loading {
+  color: #666;
+}
+
+.board-workspace {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.board-workspace canvas {
+  background: #fff;
+}
