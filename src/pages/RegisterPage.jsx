@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import './AuthPage.css'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -58,80 +69,83 @@ export default function RegisterPage() {
 
   if (loading) {
     return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <p className="auth-subtitle">Загрузка...</p>
-        </div>
+      <div className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-6 text-center text-muted-foreground">
+            Загрузка...
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1 className="auth-title">Регистрация</h1>
-        <p className="auth-subtitle">Создайте аккаунт ученика</p>
+    <div className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
+      <Card className="w-full max-w-sm shadow-sm">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl">Регистрация</CardTitle>
+          <CardDescription>Создайте аккаунт ученика</CardDescription>
+        </CardHeader>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <div className="auth-field">
-            <label className="auth-label" htmlFor="register-username">
-              Имя пользователя
-            </label>
-            <input
-              id="register-username"
-              className="auth-input"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="register-username">Имя пользователя</Label>
+              <Input
+                id="register-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
 
-          <div className="auth-field">
-            <label className="auth-label" htmlFor="register-password">
-              Пароль
-            </label>
-            <input
-              id="register-password"
-              className="auth-input"
-              type="password"
-              autoComplete="new-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="register-password">Пароль</Label>
+              <Input
+                id="register-password"
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
 
-          <div className="auth-field">
-            <label className="auth-label" htmlFor="register-confirm-password">
-              Повторите пароль
-            </label>
-            <input
-              id="register-confirm-password"
-              className="auth-input"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="register-confirm-password">Повторите пароль</Label>
+              <Input
+                id="register-confirm-password"
+                type="password"
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
 
-          {error && <p className="auth-error">{error}</p>}
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
-          <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? 'Регистрация...' : 'Зарегистрироваться'}
-          </button>
-        </form>
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Регистрация...' : 'Зарегистрироваться'}
+            </Button>
+          </form>
+        </CardContent>
 
-        <p className="auth-footer">
-          Уже есть аккаунт?{' '}
-          <Link className="auth-link" to="/login">
-            Войти
-          </Link>
-        </p>
-      </div>
+        <CardFooter className="justify-center border-t bg-muted/30">
+          <p className="text-sm text-muted-foreground">
+            Уже есть аккаунт?{' '}
+            <Link to="/login" className="font-medium text-primary hover:underline">
+              Войти
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   )
 }
