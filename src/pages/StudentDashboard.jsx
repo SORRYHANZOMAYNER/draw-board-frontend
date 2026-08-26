@@ -1,24 +1,19 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Plus, LayoutGrid } from 'lucide-react'
 import { apiJson } from '../api/client.js'
 import AppHeader from '../components/AppHeader.jsx'
-import '../styles/StudentDashboard.css'
-
-function formatRoomDate(room) {
-  const raw = room.createdAt ?? room.created_at
-  if (!raw) return ''
-
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return ''
-
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
+import { formatRoomDate } from '../lib/formatRoomDate.js'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 export default function StudentDashboard() {
   const navigate = useNavigate()
@@ -69,48 +64,68 @@ export default function StudentDashboard() {
   }
 
   return (
-    <div className="student-dashboard">
+    <div className="min-h-dvh bg-muted/30">
       <AppHeader title="Мои доски" />
 
-      <main className="student-dashboard-main">
-        <form className="student-create-form" onSubmit={createRoom}>
-          <input
-            className="student-create-input"
-            type="text"
-            placeholder="Название новой доски"
-            value={newRoomName}
-            onChange={(e) => setNewRoomName(e.target.value)}
-            disabled={creating}
-          />
-          <button type="submit" className="student-create-btn" disabled={creating}>
-            {creating ? 'Создание...' : 'Новая доска'}
-          </button>
-        </form>
+      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Новая доска</CardTitle>
+            <CardDescription>Создайте блокнот и начните рисовать</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createRoom}>
+              <Input
+                className="sm:flex-1"
+                type="text"
+                placeholder="Название новой доски"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                disabled={creating}
+              />
+              <Button type="submit" disabled={creating} className="sm:min-w-36">
+                <Plus data-icon="inline-start" />
+                {creating ? 'Создание...' : 'Новая доска'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
 
-        {error && <p className="student-dashboard-error">{error}</p>}
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
 
         {loading ? (
-          <p className="student-dashboard-status">Загрузка досок...</p>
+          <p className="text-center text-sm text-muted-foreground">Загрузка досок...</p>
         ) : rooms.length === 0 ? (
-          <div className="student-dashboard-empty">
-            <p>У вас пока нет досок</p>
-            <span>Создайте первую доску, чтобы начать работу</span>
-          </div>
+          <Card className="border-dashed">
+            <CardContent className="flex flex-col items-center gap-2 py-12 text-center">
+              <LayoutGrid className="size-10 text-muted-foreground/60" />
+              <p className="font-medium">У вас пока нет досок</p>
+              <p className="text-sm text-muted-foreground">
+                Создайте первую доску, чтобы начать работу
+              </p>
+            </CardContent>
+          </Card>
         ) : (
-          <ul className="student-room-list">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rooms.map((room) => (
-              <li key={room.id}>
-                <button
-                  type="button"
-                  className="student-room-card"
-                  onClick={() => navigate(`/board/${room.id}`)}
-                >
-                  <span className="student-room-name">{room.name || `Доска #${room.id}`}</span>
-                  <span className="student-room-date">{formatRoomDate(room)}</span>
-                </button>
-              </li>
+              <Card
+                key={room.id}
+                className="cursor-pointer transition-shadow hover:shadow-md"
+                onClick={() => navigate(`/board/${room.id}`)}
+              >
+                <CardHeader>
+                  <CardTitle className="line-clamp-2">
+                    {room.name || `Доска #${room.id}`}
+                  </CardTitle>
+                  <CardDescription>{formatRoomDate(room)}</CardDescription>
+                </CardHeader>
+              </Card>
             ))}
-          </ul>
+          </div>
         )}
       </main>
     </div>

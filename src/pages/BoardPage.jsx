@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
+import { ArrowLeft, Copy } from 'lucide-react'
 import Canvas from '../components/Canvas.jsx'
 import StickerLayer from '../components/StickerLayer.jsx'
 import Toolbar from '../components/Toolbar.jsx'
@@ -7,6 +8,10 @@ import ContextMenu from '../components/ContextMenu.jsx'
 import { useWebSocket } from '../hooks/useWebSocket.js'
 import { apiJson } from '../api/client.js'
 import { useAuth } from '../context/AuthContext.jsx'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   DEFAULT_STICKER_HEIGHT,
   DEFAULT_STICKER_WIDTH,
@@ -57,6 +62,7 @@ function buildStickerMap(events) {
 
 export default function BoardPage() {
   const { roomId } = useParams()
+  const navigate = useNavigate()
   const { isTeacher } = useAuth()
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
@@ -166,6 +172,7 @@ export default function BoardPage() {
 
         setSnapshotEvents(events)
 
+        // Не затираем стикеры, добавленные до завершения snapshot
         setStickers((prev) => {
           const fromSnapshot = buildStickerMap(events)
           if (prev.size === 0) return fromSnapshot
@@ -411,82 +418,102 @@ export default function BoardPage() {
 
   return (
     <div className="board-page" onClick={closeContextMenu}>
-      <header className="board-header">
-        <div className="board-header-top">
-          <div className="board-header-left">
-            <Link to={backPath} className="board-back-link">
-              ← Назад
-            </Link>
-            <h2 className="board-title">Комната #{roomId}</h2>
+      <header className="shrink-0 border-b bg-card px-4 py-3 sm:px-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => navigate(backPath)}>
+              <ArrowLeft data-icon="inline-start" />
+              Назад
+            </Button>
+            <h2 className="truncate text-lg font-semibold sm:text-xl">
+              Комната #{roomId}
+            </h2>
           </div>
-          <span className={`board-status${connected ? ' connected' : ''}`}>
-            {connected ? '● Подключено' : '○ Подключение...'}
-          </span>
+          <Badge variant={connected ? 'default' : 'secondary'}>
+            {connected ? 'Подключено' : 'Подключение...'}
+          </Badge>
         </div>
 
-        <div className="board-link-row">
-          <input readOnly value={window.location.href} className="board-link-input" />
-          <button type="button" className="board-copy-btn" onClick={copyLink}>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <Input readOnly value={window.location.href} className="font-mono text-xs sm:flex-1" />
+          <Button type="button" variant="outline" onClick={copyLink} className="sm:shrink-0">
+            <Copy data-icon="inline-start" />
             Копировать
-          </button>
+          </Button>
         </div>
 
-        {loading && <p className="board-loading">Загрузка доски...</p>}
-        {snapshotError && <p className="board-error">{snapshotError}</p>}
-        {connectionError && <p className="board-error">{connectionError}</p>}
-        {!boardBlocked && !connected && !connectionError && (
-          <p className="board-warning">Подождите подключения перед рисованием</p>
-        )}
+        <div className="mt-3 space-y-2">
+          {loading && (
+            <Alert>
+              <AlertDescription>Загрузка доски...</AlertDescription>
+            </Alert>
+          )}
+          {snapshotError && (
+            <Alert variant="destructive">
+              <AlertDescription>{snapshotError}</AlertDescription>
+            </Alert>
+          )}
+          {connectionError && (
+            <Alert variant="destructive">
+              <AlertDescription>{connectionError}</AlertDescription>
+            </Alert>
+          )}
+          {!boardBlocked && !connected && !connectionError && (
+            <Alert>
+              <AlertDescription>Подождите подключения перед рисованием</AlertDescription>
+            </Alert>
+          )}
+        </div>
       </header>
 
       {boardBlocked ? (
-        <div className="board-access-denied">
-          <p>{snapshotError || 'Доступ к доске запрещён'}</p>
-          <Link to={backPath} className="board-back-btn">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+          <p className="text-muted-foreground">{snapshotError || 'Доступ к доске запрещён'}</p>
+          <Button onClick={() => navigate(backPath)}>
             Вернуться к списку досок
-          </Link>
+          </Button>
         </div>
       ) : (
-        <div className="board-workspace">
-          <Toolbar
+      <div className="board-workspace">
+        <Toolbar
+          mode={mode}
+          onModeChange={handleModeChange}
+          onZoomIn={() => canvasRef.current?.zoomIn()}
+          onZoomOut={() => canvasRef.current?.zoomOut()}
+          onResetView={() => canvasRef.current?.resetView()}
+          onImageUpload={handleImageUpload}
+        />
+
+        <div className="board-canvas-area">
+          <Canvas
+            ref={canvasRef}
             mode={mode}
             onModeChange={handleModeChange}
-            onZoomIn={() => canvasRef.current?.zoomIn()}
-            onZoomOut={() => canvasRef.current?.zoomOut()}
-            onResetView={() => canvasRef.current?.resetView()}
-            onImageUpload={handleImageUpload}
+            sendDraw={sendDraw}
+            snapshotEvents={snapshotEvents}
+            registerRemoteHandler={registerRemoteHandler}
+            onCameraChange={setCamera}
+            onBoardClick={handleBoardClick}
+            onImageSelectionChange={handleImageSelectionChange}
+            onImageContextMenu={handleImageContextMenu}
           />
 
-          <div className="board-canvas-area">
-            <Canvas
-              ref={canvasRef}
-              mode={mode}
-              onModeChange={handleModeChange}
-              sendDraw={sendDraw}
-              snapshotEvents={snapshotEvents}
-              registerRemoteHandler={registerRemoteHandler}
-              onCameraChange={setCamera}
-              onBoardClick={handleBoardClick}
-              onImageSelectionChange={handleImageSelectionChange}
-              onImageContextMenu={handleImageContextMenu}
-            />
-
-            <StickerLayer
-              stickers={stickers}
-              camera={camera}
-              mode={mode}
-              selectedStickerId={selectedStickerId}
-              focusStickerId={focusStickerId}
-              onSelectSticker={handleSelectSticker}
-              onStickerTextChange={handleStickerTextChange}
-              onStickerTextCommit={handleStickerTextCommit}
-              onStickerMoveStart={handleStickerMoveStart}
-              onStickerMove={handleStickerMove}
-              onStickerMoveEnd={handleStickerMoveEnd}
-              onStickerContextMenu={handleStickerContextMenu}
-            />
-          </div>
+          <StickerLayer
+            stickers={stickers}
+            camera={camera}
+            mode={mode}
+            selectedStickerId={selectedStickerId}
+            focusStickerId={focusStickerId}
+            onSelectSticker={handleSelectSticker}
+            onStickerTextChange={handleStickerTextChange}
+            onStickerTextCommit={handleStickerTextCommit}
+            onStickerMoveStart={handleStickerMoveStart}
+            onStickerMove={handleStickerMove}
+            onStickerMoveEnd={handleStickerMoveEnd}
+            onStickerContextMenu={handleStickerContextMenu}
+          />
         </div>
+      </div>
       )}
 
       {contextMenu && (

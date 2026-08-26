@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext.jsx'
-import './AuthPage.css'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 function getRedirectPath(user, fromPath) {
   if (fromPath && fromPath !== '/login' && fromPath !== '/register') {
@@ -51,65 +62,71 @@ export default function LoginPage() {
 
   if (loading) {
     return (
-      <div className="auth-page">
-        <div className="auth-card">
-          <p className="auth-subtitle">Загрузка...</p>
-        </div>
+      <div className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
+        <Card className="w-full max-w-sm">
+          <CardContent className="pt-6 text-center text-muted-foreground">
+            Загрузка...
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="auth-page">
-      <div className="auth-card">
-        <h1 className="auth-title">Вход</h1>
-        <p className="auth-subtitle">Интерактивная доска</p>
+    <div className="flex min-h-dvh items-center justify-center bg-muted/40 p-4">
+      <Card className="w-full max-w-sm shadow-sm">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl">Вход</CardTitle>
+          <CardDescription>Интерактивная доска для учеников и учителей</CardDescription>
+        </CardHeader>
 
-        <form className="auth-form" onSubmit={handleSubmit}>
-          <div className="auth-field">
-            <label className="auth-label" htmlFor="login-username">
-              Имя пользователя
-            </label>
-            <input
-              id="login-username"
-              className="auth-input"
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+        <CardContent>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <Label htmlFor="login-username">Имя пользователя</Label>
+              <Input
+                id="login-username"
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
 
-          <div className="auth-field">
-            <label className="auth-label" htmlFor="login-password">
-              Пароль
-            </label>
-            <input
-              id="login-password"
-              className="auth-input"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              disabled={submitting}
-            />
-          </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password">Пароль</Label>
+              <Input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={submitting}
+              />
+            </div>
 
-          {error && <p className="auth-error">{error}</p>}
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
-          <button type="submit" className="auth-submit" disabled={submitting}>
-            {submitting ? 'Вход...' : 'Войти'}
-          </button>
-        </form>
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? 'Вход...' : 'Войти'}
+            </Button>
+          </form>
+        </CardContent>
 
-        <p className="auth-footer">
-          Нет аккаунта?{' '}
-          <Link className="auth-link" to="/register">
-            Зарегистрироваться
-          </Link>
-        </p>
-      </div>
+        <CardFooter className="justify-center border-t bg-muted/30">
+          <p className="text-sm text-muted-foreground">
+            Нет аккаунта?{' '}
+            <Link to="/register" className="font-medium text-primary hover:underline">
+              Зарегистрироваться
+            </Link>
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   )
 }

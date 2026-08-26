@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Plus, Search, Users } from 'lucide-react'
 import { apiJson } from '../api/client.js'
 import AppHeader from '../components/AppHeader.jsx'
-import '../styles/TeacherDashboard.css'
+import { formatRoomDate } from '../lib/formatRoomDate.js'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { cn } from '@/lib/utils'
 
 function getStudentId(student) {
   if (student == null) return null
@@ -16,22 +28,6 @@ function normalizeStudent(student) {
   const id = getStudentId(student)
   if (id == null) return null
   return { ...student, id }
-}
-
-function formatRoomDate(room) {
-  const raw = room.createdAt ?? room.created_at
-  if (!raw) return ''
-
-  const date = new Date(raw)
-  if (Number.isNaN(date.getTime())) return ''
-
-  return date.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 export default function TeacherDashboard() {
@@ -153,101 +149,137 @@ export default function TeacherDashboard() {
   }
 
   return (
-    <div className="teacher-dashboard">
+    <div className="min-h-dvh bg-muted/30">
       <AppHeader title="Кабинет учителя" />
 
-      <main className="teacher-dashboard-main">
-        <section className="teacher-panel">
-          <h2 className="teacher-panel-title">Поиск ученика</h2>
-          <input
-            className="teacher-search-input"
-            type="text"
-            placeholder="Введите имя ученика"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[320px_1fr] sm:px-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Search className="size-4" />
+              Поиск ученика
+            </CardTitle>
+            <CardDescription>Введите имя и выберите ученика из списка</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              type="text"
+              placeholder="Введите имя ученика"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
 
-          {searching && <p className="teacher-panel-status">Поиск...</p>}
-          {searchError && <p className="teacher-panel-error">{searchError}</p>}
+            {searching && (
+              <p className="text-sm text-muted-foreground">Поиск...</p>
+            )}
 
-          {!searching && searchQuery.trim() && searchResults.length === 0 && !searchError && (
-            <p className="teacher-panel-status">Ученики не найдены</p>
-          )}
+            {searchError && (
+              <Alert variant="destructive">
+                <AlertDescription>{searchError}</AlertDescription>
+              </Alert>
+            )}
 
-          {searchResults.length > 0 && (
-            <ul className="teacher-student-list">
-              {searchResults.map((student) => (
-                <li key={student.id}>
-                  <button
-                    type="button"
-                    className={`teacher-student-item${
-                      selectedStudent?.id === student.id ? ' selected' : ''
-                    }`}
-                    onClick={() => selectStudent(student)}
-                  >
-                    {student.username}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+            {!searching && searchQuery.trim() && searchResults.length === 0 && !searchError && (
+              <p className="text-sm text-muted-foreground">Ученики не найдены</p>
+            )}
 
-        <section className="teacher-panel teacher-panel-wide">
+            {searchResults.length > 0 && (
+              <ul className="space-y-2">
+                {searchResults.map((student) => (
+                  <li key={student.id}>
+                    <Button
+                      type="button"
+                      variant={selectedStudent?.id === student.id ? 'default' : 'outline'}
+                      className="w-full justify-start"
+                      onClick={() => selectStudent(student)}
+                    >
+                      {student.username}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="min-h-[420px]">
           {!selectedStudent ? (
-            <div className="teacher-empty-state">
-              <p>Найдите ученика по имени</p>
-              <span>После выбора вы увидите его доски и сможете создать новый блокнот</span>
-            </div>
+            <CardContent className="flex h-full flex-col items-center justify-center gap-3 py-16 text-center">
+              <Users className="size-12 text-muted-foreground/50" />
+              <div className="space-y-1">
+                <p className="font-medium">Найдите ученика по имени</p>
+                <p className="max-w-sm text-sm text-muted-foreground">
+                  После выбора вы увидите его доски и сможете создать новый блокнот
+                </p>
+              </div>
+            </CardContent>
           ) : (
             <>
-              <div className="teacher-selected-header">
-                <h2 className="teacher-panel-title">Доски ученика: {selectedStudent.username}</h2>
-              </div>
+              <CardHeader>
+                <CardTitle>Доски ученика: {selectedStudent.username}</CardTitle>
+                <CardDescription>Управление блокнотами ученика</CardDescription>
+              </CardHeader>
 
-              <form className="teacher-create-form" onSubmit={createRoomForStudent}>
-                <input
-                  className="teacher-create-input"
-                  type="text"
-                  placeholder="Название блокнота"
-                  value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  disabled={creating}
-                />
-                <button type="submit" className="teacher-create-btn" disabled={creating}>
-                  {creating ? 'Создание...' : 'Создать блокнот'}
-                </button>
-              </form>
+              <CardContent className="space-y-4">
+                <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createRoomForStudent}>
+                  <Input
+                    className="sm:flex-1"
+                    type="text"
+                    placeholder="Название блокнота"
+                    value={newRoomName}
+                    onChange={(e) => setNewRoomName(e.target.value)}
+                    disabled={creating}
+                  />
+                  <Button type="submit" disabled={creating} className="sm:min-w-40">
+                    <Plus data-icon="inline-start" />
+                    {creating ? 'Создание...' : 'Создать блокнот'}
+                  </Button>
+                </form>
 
-              {actionError && <p className="teacher-panel-error">{actionError}</p>}
-              {roomsError && <p className="teacher-panel-error">{roomsError}</p>}
+                {actionError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{actionError}</AlertDescription>
+                  </Alert>
+                )}
 
-              {roomsLoading ? (
-                <p className="teacher-panel-status">Загрузка досок...</p>
-              ) : rooms.length === 0 ? (
-                <div className="teacher-empty-state compact">
-                  <p>У ученика пока нет досок</p>
-                  <span>Создайте первый блокнот для него</span>
-                </div>
-              ) : (
-                <ul className="teacher-room-list">
-                  {rooms.map((room) => (
-                    <li key={room.id}>
+                {roomsError && (
+                  <Alert variant="destructive">
+                    <AlertDescription>{roomsError}</AlertDescription>
+                  </Alert>
+                )}
+
+                {roomsLoading ? (
+                  <p className="text-sm text-muted-foreground">Загрузка досок...</p>
+                ) : rooms.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-8 text-center">
+                    <p className="font-medium">У ученика пока нет досок</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Создайте первый блокнот для него
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {rooms.map((room) => (
                       <button
+                        key={room.id}
                         type="button"
-                        className="teacher-room-card"
+                        className={cn(
+                          'rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent'
+                        )}
                         onClick={() => navigate(`/board/${room.id}`)}
                       >
-                        <span className="teacher-room-name">{room.name || `Доска #${room.id}`}</span>
-                        <span className="teacher-room-date">{formatRoomDate(room)}</span>
+                        <p className="font-medium">{room.name || `Доска #${room.id}`}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {formatRoomDate(room)}
+                        </p>
                       </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+                    ))}
+                  </div>
+                )}
+              </CardContent>
             </>
           )}
-        </section>
+        </Card>
       </main>
     </div>
   )
