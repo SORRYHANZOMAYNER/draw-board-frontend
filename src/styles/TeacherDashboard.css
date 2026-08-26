@@ -1,0 +1,223 @@
+.teacher-dashboard {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+  background: #f0f0f0;
+}
+
+.teacher-dashboard-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 20px;
+  padding: 20px;
+  overflow: hidden;
+}
+
+.teacher-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 20px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+  overflow: auto;
+}
+
+.teacher-panel-wide {
+  min-width: 0;
+}
+
+.teacher-panel-title {
+  margin: 0 0 16px;
+  font-size: 20px;
+}
+
+.teacher-search-input,
+.teacher-create-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.teacher-search-input:focus,
+.teacher-create-input:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+
+.teacher-panel-status {
+  margin: 12px 0 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.teacher-panel-error {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 14px;
+}
+
+.teacher-student-list {
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.teacher-student-item {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.teacher-student-item:hover {
+  border-color: #2563eb;
+}
+
+.teacher-student-item.selected {
+  border-color: #2563eb;
+  background: #eff6ff;
+  font-weight: 600;
+}
+
+.teacher-selected-header {
+  margin-bottom: 16px;
+}
+
+.teacher-create-form {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.teacher-create-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.teacher-create-btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.teacher-create-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.teacher-empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 240px;
+  text-align: center;
+}
+
+.teacher-empty-state.compact {
+  min-height: 160px;
+}
+
+.teacher-empty-state p {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.teacher-empty-state span {
+  color: #666;
+  font-size: 14px;
+  max-width: 320px;
+}
+
+.teacher-room-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.teacher-room-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.teacher-room-card:hover {
+  border-color: #2563eb;
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.12);
+}
+
+.teacher-room-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111;
+}
+
+.teacher-room-date {
+  font-size: 13px;
+  color: #666;
+}
+
+@media (max-width: 900px) {
+  .teacher-dashboard-main {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+
+  .teacher-panel {
+    overflow: visible;
+  }
+}
+
+@media (max-width: 640px) {
+  .teacher-dashboard-main {
+    padding: 16px;
+    gap: 16px;
+  }
+
+  .teacher-create-form {
+    flex-direction: column;
+  }
+
+  .teacher-create-btn {
+    width: 100%;
+  }
+}

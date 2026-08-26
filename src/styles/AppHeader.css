@@ -1,0 +1,49 @@
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 20px;
+  background: #fff;
+  border-bottom: 1px solid #ddd;
+}
+
+.app-header-main {
+  min-width: 0;
+}
+
+.app-header-title {
+  margin: 0;
+  font-size: clamp(18px, 4vw, 24px);
+}
+
+.app-header-greeting {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: #666;
+}
+
+.app-header-logout {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #fff;
+  color: #333;
+  cursor: pointer;
+}
+
+.app-header-logout:hover {
+  background: #f5f5f5;
+}
+
+@media (max-width: 640px) {
+  .app-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app-header-logout {
+    width: 100%;
+  }
+}

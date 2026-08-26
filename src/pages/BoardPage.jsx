@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import Canvas from '../components/Canvas.jsx'
 import StickerLayer from '../components/StickerLayer.jsx'
 import Toolbar from '../components/Toolbar.jsx'
 import ContextMenu from '../components/ContextMenu.jsx'
 import { useWebSocket } from '../hooks/useWebSocket.js'
+import { apiJson } from '../api/client.js'
+import { useAuth } from '../context/AuthContext.jsx'
 import {
   DEFAULT_STICKER_HEIGHT,
   DEFAULT_STICKER_WIDTH,
@@ -55,12 +57,16 @@ function buildStickerMap(events) {
 
 export default function BoardPage() {
   const { roomId } = useParams()
+  const { isTeacher } = useAuth()
   const canvasRef = useRef(null)
   const fileInputRef = useRef(null)
+  const backPath = isTeacher ? '/teacher' : '/'
 
   const [mode, setMode] = useState('draw')
   const [snapshotEvents, setSnapshotEvents] = useState([])
   const [loading, setLoading] = useState(true)
+  const [snapshotError, setSnapshotError] = useState(null)
+  const [accessDenied, setAccessDenied] = useState(false)
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 })
   const [stickers, setStickers] = useState(() => new Map())
   const [selectedStickerId, setSelectedStickerId] = useState(null)
@@ -144,15 +150,18 @@ export default function BoardPage() {
     eventQueueRef.current = []
   }, [])
 
-  const { sendDraw, connected } = useWebSocket(roomId, onMessage)
+  const { sendDraw, connected, connectionError } = useWebSocket(roomId, onMessage)
+  const boardBlocked = accessDenied || Boolean(snapshotError)
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
+    setSnapshotError(null)
+    setAccessDenied(false)
 
-    fetch(`http://localhost:8080/room/${roomId}/snapshot`)
-      .then((response) => response.json())
-      .then((events) => {
+    async function loadSnapshot() {
+      try {
+        const events = await apiJson(`/room/${roomId}/snapshot`)
         if (cancelled) return
 
         setSnapshotEvents(events)
@@ -165,11 +174,21 @@ export default function BoardPage() {
           prev.forEach((sticker, id) => merged.set(id, sticker))
           return merged
         })
-      })
-      .catch((error) => console.error('Snapshot error', error))
-      .finally(() => {
+      } catch (error) {
+        if (cancelled) return
+
+        if (error.status === 403) {
+          setAccessDenied(true)
+          setSnapshotError('Нет доступа к этой доске')
+        } else {
+          setSnapshotError(error.message || 'Не удалось загрузить доску')
+        }
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    }
+
+    loadSnapshot()
 
     return () => {
       cancelled = true
@@ -394,7 +413,12 @@ export default function BoardPage() {
     <div className="board-page" onClick={closeContextMenu}>
       <header className="board-header">
         <div className="board-header-top">
-          <h2 className="board-title">Комната #{roomId}</h2>
+          <div className="board-header-left">
+            <Link to={backPath} className="board-back-link">
+              ← Назад
+            </Link>
+            <h2 className="board-title">Комната #{roomId}</h2>
+          </div>
           <span className={`board-status${connected ? ' connected' : ''}`}>
             {connected ? '● Подключено' : '○ Подключение...'}
           </span>
@@ -407,52 +431,63 @@ export default function BoardPage() {
           </button>
         </div>
 
-        {!connected && (
+        {loading && <p className="board-loading">Загрузка доски...</p>}
+        {snapshotError && <p className="board-error">{snapshotError}</p>}
+        {connectionError && <p className="board-error">{connectionError}</p>}
+        {!boardBlocked && !connected && !connectionError && (
           <p className="board-warning">Подождите подключения перед рисованием</p>
         )}
-        {loading && <p className="board-loading">Загрузка доски...</p>}
       </header>
 
-      <div className="board-workspace">
-        <Toolbar
-          mode={mode}
-          onModeChange={handleModeChange}
-          onZoomIn={() => canvasRef.current?.zoomIn()}
-          onZoomOut={() => canvasRef.current?.zoomOut()}
-          onResetView={() => canvasRef.current?.resetView()}
-          onImageUpload={handleImageUpload}
-        />
-
-        <div className="board-canvas-area">
-          <Canvas
-            ref={canvasRef}
+      {boardBlocked ? (
+        <div className="board-access-denied">
+          <p>{snapshotError || 'Доступ к доске запрещён'}</p>
+          <Link to={backPath} className="board-back-btn">
+            Вернуться к списку досок
+          </Link>
+        </div>
+      ) : (
+        <div className="board-workspace">
+          <Toolbar
             mode={mode}
             onModeChange={handleModeChange}
-            sendDraw={sendDraw}
-            snapshotEvents={snapshotEvents}
-            registerRemoteHandler={registerRemoteHandler}
-            onCameraChange={setCamera}
-            onBoardClick={handleBoardClick}
-            onImageSelectionChange={handleImageSelectionChange}
-            onImageContextMenu={handleImageContextMenu}
+            onZoomIn={() => canvasRef.current?.zoomIn()}
+            onZoomOut={() => canvasRef.current?.zoomOut()}
+            onResetView={() => canvasRef.current?.resetView()}
+            onImageUpload={handleImageUpload}
           />
 
-          <StickerLayer
-            stickers={stickers}
-            camera={camera}
-            mode={mode}
-            selectedStickerId={selectedStickerId}
-            focusStickerId={focusStickerId}
-            onSelectSticker={handleSelectSticker}
-            onStickerTextChange={handleStickerTextChange}
-            onStickerTextCommit={handleStickerTextCommit}
-            onStickerMoveStart={handleStickerMoveStart}
-            onStickerMove={handleStickerMove}
-            onStickerMoveEnd={handleStickerMoveEnd}
-            onStickerContextMenu={handleStickerContextMenu}
-          />
+          <div className="board-canvas-area">
+            <Canvas
+              ref={canvasRef}
+              mode={mode}
+              onModeChange={handleModeChange}
+              sendDraw={sendDraw}
+              snapshotEvents={snapshotEvents}
+              registerRemoteHandler={registerRemoteHandler}
+              onCameraChange={setCamera}
+              onBoardClick={handleBoardClick}
+              onImageSelectionChange={handleImageSelectionChange}
+              onImageContextMenu={handleImageContextMenu}
+            />
+
+            <StickerLayer
+              stickers={stickers}
+              camera={camera}
+              mode={mode}
+              selectedStickerId={selectedStickerId}
+              focusStickerId={focusStickerId}
+              onSelectSticker={handleSelectSticker}
+              onStickerTextChange={handleStickerTextChange}
+              onStickerTextCommit={handleStickerTextCommit}
+              onStickerMoveStart={handleStickerMoveStart}
+              onStickerMove={handleStickerMove}
+              onStickerMoveEnd={handleStickerMoveEnd}
+              onStickerContextMenu={handleStickerContextMenu}
+            />
+          </div>
         </div>
-      </div>
+      )}
 
       {contextMenu && (
         <ContextMenu
