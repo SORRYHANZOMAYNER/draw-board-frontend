@@ -51,6 +51,58 @@ export async function apiFetch(path, options = {}) {
   return response
 }
 
+const GENERIC_HTTP_ERRORS = new Set([
+  'Bad Request',
+  'Unauthorized',
+  'Forbidden',
+  'Not Found',
+  'Method Not Allowed',
+  'Conflict',
+  'Internal Server Error',
+])
+
+export function getApiErrorMessage(data, status) {
+  if (data == null) return null
+
+  if (typeof data === 'string' && data.trim()) {
+    return data.trim()
+  }
+
+  if (typeof data !== 'object') return null
+
+  if (typeof data.detail === 'string' && data.detail.trim()) {
+    return data.detail.trim()
+  }
+
+  if (typeof data.message === 'string' && data.message.trim()) {
+    return data.message.trim()
+  }
+
+  if (typeof data.error === 'string' && data.error.trim() && !GENERIC_HTTP_ERRORS.has(data.error.trim())) {
+    return data.error.trim()
+  }
+
+  if (Array.isArray(data.errors) && data.errors.length > 0) {
+    const first = data.errors[0]
+    if (typeof first === 'string' && first.trim()) return first.trim()
+    if (typeof first?.message === 'string' && first.message.trim()) return first.message.trim()
+  }
+
+  return null
+}
+
+export function getErrorMessage(error, fallback = 'Request failed') {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error.trim()
+  }
+
+  return fallback
+}
+
 export async function apiJson(path, options = {}) {
   const response = await apiFetch(path, options)
 
@@ -59,8 +111,7 @@ export async function apiJson(path, options = {}) {
 
     try {
       const data = await response.json()
-      if (data?.message) message = data.message
-      else if (data?.error) message = data.error
+      message = getApiErrorMessage(data, response.status) ?? message
     } catch {
       // ignore parse errors
     }
