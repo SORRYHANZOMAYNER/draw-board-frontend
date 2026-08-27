@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, Copy } from 'lucide-react'
+import { ArrowLeft, Copy, Pencil, Check, X } from 'lucide-react'
 import Canvas from '../components/Canvas.jsx'
 import StickerLayer from '../components/StickerLayer.jsx'
 import Toolbar from '../components/Toolbar.jsx'
@@ -73,6 +73,11 @@ export default function BoardPage() {
   const [loading, setLoading] = useState(true)
   const [snapshotError, setSnapshotError] = useState(null)
   const [accessDenied, setAccessDenied] = useState(false)
+  const [roomName, setRoomName] = useState('')
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState('')
+  const [nameSaving, setNameSaving] = useState(false)
+  const [nameError, setNameError] = useState('')
   const [camera, setCamera] = useState({ x: 0, y: 0, zoom: 1 })
   const [stickers, setStickers] = useState(() => new Map())
   const [selectedStickerId, setSelectedStickerId] = useState(null)
@@ -158,6 +163,50 @@ export default function BoardPage() {
 
   const { sendDraw, connected, connectionError } = useWebSocket(roomId, onMessage)
   const boardBlocked = accessDenied || Boolean(snapshotError)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadRoomMeta() {
+      try {
+        const room = await apiJson(`/room/${roomId}`)
+        if (cancelled) return
+        setRoomName(room.name || `Доска #${roomId}`)
+      } catch {
+        if (!cancelled) setRoomName(`Комната #${roomId}`)
+      }
+    }
+
+    loadRoomMeta()
+    return () => {
+      cancelled = true
+    }
+  }, [roomId])
+
+  const saveRoomName = async (event) => {
+    event?.preventDefault()
+    const trimmed = nameDraft.trim()
+    if (!trimmed) {
+      setNameError('Название не может быть пустым')
+      return
+    }
+
+    setNameSaving(true)
+    setNameError('')
+
+    try {
+      const updated = await apiJson(`/room/${roomId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: trimmed }),
+      })
+      setRoomName(updated.name || trimmed)
+      setEditingName(false)
+    } catch (err) {
+      setNameError(err.message || 'Не удалось переименовать')
+    } finally {
+      setNameSaving(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -420,14 +469,58 @@ export default function BoardPage() {
     <div className="board-page" onClick={closeContextMenu}>
       <header className="shrink-0 border-b bg-card px-4 py-3 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => navigate(backPath)}>
               <ArrowLeft data-icon="inline-start" />
               Назад
             </Button>
-            <h2 className="truncate text-lg font-semibold sm:text-xl">
-              Комната #{roomId}
-            </h2>
+            {editingName ? (
+              <form className="flex min-w-0 flex-1 flex-wrap items-center gap-2" onSubmit={saveRoomName}>
+                <Input
+                  className="max-w-xs"
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  disabled={nameSaving}
+                  autoFocus
+                  maxLength={100}
+                />
+                <Button type="submit" size="sm" disabled={nameSaving}>
+                  <Check data-icon="inline-start" />
+                  {nameSaving ? '...' : 'OK'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={nameSaving}
+                  onClick={() => {
+                    setEditingName(false)
+                    setNameError('')
+                  }}
+                >
+                  <X data-icon="inline-start" />
+                </Button>
+              </form>
+            ) : (
+              <>
+                <h2 className="truncate text-lg font-semibold sm:text-xl">
+                  {roomName || `Комната #${roomId}`}
+                </h2>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Переименовать доску"
+                  onClick={() => {
+                    setNameDraft(roomName || '')
+                    setNameError('')
+                    setEditingName(true)
+                  }}
+                >
+                  <Pencil />
+                </Button>
+              </>
+            )}
           </div>
           <Badge variant={connected ? 'default' : 'secondary'}>
             {connected ? 'Подключено' : 'Подключение...'}
@@ -443,6 +536,11 @@ export default function BoardPage() {
         </div>
 
         <div className="mt-3 space-y-2">
+          {nameError && (
+            <Alert variant="destructive">
+              <AlertDescription>{nameError}</AlertDescription>
+            </Alert>
+          )}
           {loading && (
             <Alert>
               <AlertDescription>Загрузка доски...</AlertDescription>

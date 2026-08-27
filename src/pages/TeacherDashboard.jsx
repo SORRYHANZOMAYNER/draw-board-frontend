@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Search, Users } from 'lucide-react'
 import { apiJson } from '../api/client.js'
 import AppHeader from '../components/AppHeader.jsx'
-import { formatRoomDate } from '../lib/formatRoomDate.js'
+import RoomCard from '../components/RoomCard.jsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -14,7 +14,6 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { cn } from '@/lib/utils'
 
 function getStudentId(student) {
   if (student == null) return null
@@ -122,6 +121,16 @@ export default function TeacherDashboard() {
       }
     }
   }, [searchQuery])
+
+  const handleRoomRenamed = useCallback((updatedRoom) => {
+    setRooms((prev) =>
+      prev.map((room) => (room.id === updatedRoom.id ? updatedRoom : room))
+    )
+  }, [])
+
+  const handleRoomDeleted = useCallback((deletedRoom) => {
+    setRooms((prev) => prev.filter((room) => room.id !== deletedRoom.id))
+  }, [])
 
   const createRoomForStudent = async (event) => {
     event.preventDefault()
@@ -260,19 +269,13 @@ export default function TeacherDashboard() {
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {rooms.map((room) => (
-                      <button
+                      <RoomCard
                         key={room.id}
-                        type="button"
-                        className={cn(
-                          'rounded-xl border bg-card p-4 text-left transition-colors hover:bg-accent'
-                        )}
-                        onClick={() => navigate(`/board/${room.id}`)}
-                      >
-                        <p className="font-medium">{room.name || `Доска #${room.id}`}</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {formatRoomDate(room)}
-                        </p>
-                      </button>
+                        room={room}
+                        onOpen={(r) => navigate(`/board/${r.id}`)}
+                        onRenamed={handleRoomRenamed}
+                        onDeleted={handleRoomDeleted}
+                      />
                     ))}
                   </div>
                 )}

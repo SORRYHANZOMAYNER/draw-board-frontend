@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, LayoutGrid } from 'lucide-react'
 import { apiJson } from '../api/client.js'
 import AppHeader from '../components/AppHeader.jsx'
-import { formatRoomDate } from '../lib/formatRoomDate.js'
+import RoomCard from '../components/RoomCard.jsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -41,6 +41,16 @@ export default function StudentDashboard() {
   useEffect(() => {
     loadRooms()
   }, [loadRooms])
+
+  const handleRoomRenamed = useCallback((updatedRoom) => {
+    setRooms((prev) =>
+      prev.map((room) => (room.id === updatedRoom.id ? updatedRoom : room))
+    )
+  }, [])
+
+  const handleRoomDeleted = useCallback((deletedRoom) => {
+    setRooms((prev) => prev.filter((room) => room.id !== deletedRoom.id))
+  }, [])
 
   const createRoom = async (event) => {
     event.preventDefault()
@@ -112,18 +122,14 @@ export default function StudentDashboard() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rooms.map((room) => (
-              <Card
+              <RoomCard
                 key={room.id}
-                className="cursor-pointer transition-shadow hover:shadow-md"
-                onClick={() => navigate(`/board/${room.id}`)}
-              >
-                <CardHeader>
-                  <CardTitle className="line-clamp-2">
-                    {room.name || `Доска #${room.id}`}
-                  </CardTitle>
-                  <CardDescription>{formatRoomDate(room)}</CardDescription>
-                </CardHeader>
-              </Card>
+                room={room}
+                canDelete={true}
+                onOpen={(r) => navigate(`/board/${r.id}`)}
+                onRenamed={handleRoomRenamed}
+                onDeleted={handleRoomDeleted}
+              />
             ))}
           </div>
         )}
