@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   DEFAULT_STICKER_HEIGHT,
   DEFAULT_STICKER_WIDTH,
+  DEFAULT_STROKE_COLOR,
   STICKER_COLORS,
 } from '../constants/board.js'
 import '../styles/BoardPage.css'
@@ -69,6 +70,8 @@ export default function BoardPage() {
   const backPath = isTeacher ? '/teacher' : '/'
 
   const [mode, setMode] = useState('draw')
+  const [strokeColor, setStrokeColor] = useState(DEFAULT_STROKE_COLOR)
+  const [shapeType, setShapeType] = useState('rect')
   const [snapshotEvents, setSnapshotEvents] = useState([])
   const [loading, setLoading] = useState(true)
   const [snapshotError, setSnapshotError] = useState(null)
@@ -575,6 +578,10 @@ export default function BoardPage() {
       <div className="board-workspace">
         <Toolbar
           mode={mode}
+          strokeColor={strokeColor}
+          shapeType={shapeType}
+          onStrokeColorChange={setStrokeColor}
+          onShapeTypeChange={setShapeType}
           onModeChange={handleModeChange}
           onZoomIn={() => canvasRef.current?.zoomIn()}
           onZoomOut={() => canvasRef.current?.zoomOut()}
@@ -586,6 +593,8 @@ export default function BoardPage() {
           <Canvas
             ref={canvasRef}
             mode={mode}
+            shapeType={shapeType}
+            strokeColor={strokeColor}
             onModeChange={handleModeChange}
             sendDraw={sendDraw}
             snapshotEvents={snapshotEvents}

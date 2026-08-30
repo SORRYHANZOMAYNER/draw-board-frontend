@@ -1,5 +1,18 @@
 import { useRef, useEffect, useCallback, useState, forwardRef, useImperativeHandle } from 'react'
-import { WORLD_WIDTH, WORLD_HEIGHT } from '../constants/board.js'
+import {
+  WORLD_WIDTH,
+  WORLD_HEIGHT,
+  DEFAULT_STROKE_WIDTH,
+  MIN_SHAPE_SIZE,
+} from '../constants/board.js'
+import { buildCanvasStateFromEvents } from '../lib/canvasClear.js'
+import {
+  drawShape,
+  drawShapeSelection,
+  hitTestShapeHandle,
+  buildShapeFromDrag,
+  isShapeLargeEnough,
+} from '../lib/shapeDraw.js'
 const MAX_IMAGE_PX = 800
 const MIN_IMAGE_SIZE = 0.02
 const HANDLE_RADIUS = 10
@@ -32,6 +45,8 @@ function compressImage(file) {
 const Canvas = forwardRef(function Canvas(
   {
     mode,
+    shapeType,
+    strokeColor = '#111827',
     onModeChange,
     sendDraw,
     snapshotEvents = [],
@@ -45,6 +60,8 @@ const Canvas = forwardRef(function Canvas(
 ) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
+  const strokeColorRef = useRef(strokeColor)
+  const shapeTypeRef = useRef(shapeType)
 
   const [, setSelectedImageId] = useState(null)
 
@@ -59,9 +76,13 @@ const Canvas = forwardRef(function Canvas(
 
   const strokes = useRef(new Map())
   const imagesRef = useRef(new Map())
+  const shapesRef = useRef(new Map())
   const allEventsRef = useRef([])
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
   const dragRef = useRef(null)
+  const shapeDragRef = useRef(null)
+  const pendingShapeRef = useRef(null)
+  const shapeResizeDragRef = useRef(null)
 
   const [, forceRender] = useState(0)
 
@@ -82,12 +103,29 @@ const Canvas = forwardRef(function Canvas(
   }, [onImageSelectionChange])
 
   useEffect(() => {
+    strokeColorRef.current = strokeColor
+  }, [strokeColor])
+
+  useEffect(() => {
+    shapeTypeRef.current = shapeType
+  }, [shapeType])
+
+  const lockPendingShape = useCallback(() => {
+    pendingShapeRef.current = null
+    shapeResizeDragRef.current = null
+  }, [])
+
+  useEffect(() => {
     if (mode === 'draw') {
       clearSelection()
       dragRef.current = null
       redrawAllRef.current()
     }
-  }, [mode, clearSelection])
+    if (mode !== 'shape') {
+      lockPendingShape()
+      shapeDragRef.current = null
+    }
+  }, [mode, clearSelection, lockPendingShape])
 
   const worldToScreen = useCallback((worldX, worldY) => {
     const cam = cameraRef.current
@@ -192,10 +230,54 @@ const Canvas = forwardRef(function Canvas(
     })
   }, [])
 
+  const drawShapes = useCallback(() => {
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
+
+    const zoom = cameraRef.current.zoom
+    shapesRef.current.forEach((shape) => {
+      drawShape(ctx, shape, worldToScreen, zoom)
+    })
+  }, [worldToScreen])
+
+  const drawShapeOverlays = useCallback(() => {
+    const ctx = canvasRef.current?.getContext('2d')
+    if (!ctx) return
+
+    const zoom = cameraRef.current.zoom
+
+    const drag = shapeDragRef.current
+    if (drag && mode === 'shape') {
+      const shapeProps = buildShapeFromDrag(
+        drag.startX,
+        drag.startY,
+        drag.currentX,
+        drag.currentY,
+        shapeTypeRef.current
+      )
+      drawShape(ctx, {
+        shapeType: shapeTypeRef.current,
+        ...shapeProps,
+        color: strokeColorRef.current,
+        strokeWidth: DEFAULT_STROKE_WIDTH,
+      }, worldToScreen, zoom)
+    }
+
+    const pending = pendingShapeRef.current
+    if (pending) {
+      const shape = shapesRef.current.get(pending.shapeId)
+      if (shape) {
+        drawShapeSelection(ctx, shape, worldToScreen, zoom)
+      }
+    }
+  }, [mode, worldToScreen])
+
   const drawImagesOnTop = useCallback(() => {
     drawImages()
+    drawShapes()
     drawSelection()
-  }, [drawImages, drawSelection])
+    drawShapeOverlays()
+  }, [drawImages, drawShapes, drawSelection, drawShapeOverlays])
 
   const applyStrokeEvent = useCallback((event, { refreshImages = false } = {}) => {
     const { type, strokeId: id, x, y, color, width } = event
@@ -259,7 +341,7 @@ const Canvas = forwardRef(function Canvas(
     }
   }, [clearSelection])
 
-  const redrawAll = useCallback(() => {
+  const redrawAll = useCallback(async () => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
@@ -268,15 +350,44 @@ const Canvas = forwardRef(function Canvas(
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    strokes.current.clear()
+    const { strokePaths, images: builtImages, shapes } = buildCanvasStateFromEvents(allEventsRef.current)
+    shapesRef.current = shapes
 
-    allEventsRef.current.forEach((event) => {
-      if (event.type.startsWith('IMAGE_')) return
-      applyStrokeEvent(event)
-    })
+    strokes.current.clear()
+    const previousImages = imagesRef.current
+    imagesRef.current.clear()
+
+    for (const [, img] of builtImages) {
+      const previous = previousImages.get(img.imageId)
+      imagesRef.current.set(img.imageId, {
+        ...img,
+        element: previous?.element ?? null,
+      })
+    }
+
+    for (const [, img] of builtImages) {
+      const existing = imagesRef.current.get(img.imageId)
+      if (existing && !existing.element && existing.data) {
+        await loadImageElement(existing)
+      }
+    }
+
+    for (const [, stroke] of strokePaths) {
+      const points = stroke.points ?? []
+      for (let i = 1; i < points.length; i += 1) {
+        drawSegmentWorld(
+          points[i - 1].x,
+          points[i - 1].y,
+          points[i].x,
+          points[i].y,
+          stroke.color,
+          stroke.width
+        )
+      }
+    }
 
     drawImagesOnTop()
-  }, [applyStrokeEvent, drawImagesOnTop])
+  }, [drawSegmentWorld, drawImagesOnTop, loadImageElement])
 
   useEffect(() => {
     redrawAllRef.current = redrawAll
@@ -307,6 +418,20 @@ const Canvas = forwardRef(function Canvas(
   }, [sendDraw])
 
   const handleEvent = useCallback(async (event, { persist = true } = {}) => {
+    if (event.type === 'BOARD_CLEAR' || event.type === 'REGION_CLEAR') {
+      if (persist) allEventsRef.current.push(event)
+      shapeDragRef.current = null
+      lockPendingShape()
+      await redrawAllRef.current()
+      return
+    }
+
+    if (event.type === 'SHAPE_ADD' || event.type === 'SHAPE_RESIZE' || event.type === 'SHAPE_DELETE') {
+      if (persist) allEventsRef.current.push(event)
+      await redrawAllRef.current()
+      return
+    }
+
     if (event.type === 'IMAGE_ADD') {
       if (persist) allEventsRef.current.push(event)
       await applyImageAdd(event)
@@ -337,7 +462,157 @@ const Canvas = forwardRef(function Canvas(
 
     if (persist) allEventsRef.current.push(event)
     applyStrokeEvent(event, { refreshImages: true })
-  }, [applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, applyStrokeEvent])
+  }, [applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, applyStrokeEvent, lockPendingShape])
+
+  const resizeShapeFromCorner = useCallback((shape, corner, norm, orig) => {
+    if (shape.shapeType === 'line') {
+      if (corner === 'start') {
+        const endX = orig.x + orig.width
+        const endY = orig.y + orig.height
+        shape.x = norm.x
+        shape.y = norm.y
+        shape.width = endX - norm.x
+        shape.height = endY - norm.y
+      } else if (corner === 'end') {
+        shape.width = norm.x - orig.x
+        shape.height = norm.y - orig.y
+      }
+      return
+    }
+
+    const origRight = orig.x + orig.width
+    const origBottom = orig.y + orig.height
+
+    if (corner === 'br') {
+      shape.width = Math.max(MIN_SHAPE_SIZE, norm.x - orig.x)
+      shape.height = Math.max(MIN_SHAPE_SIZE, norm.y - orig.y)
+    } else if (corner === 'bl') {
+      const newX = Math.min(norm.x, origRight - MIN_SHAPE_SIZE)
+      shape.width = origRight - newX
+      shape.x = newX
+      shape.height = Math.max(MIN_SHAPE_SIZE, norm.y - orig.y)
+    } else if (corner === 'tr') {
+      const newY = Math.min(norm.y, origBottom - MIN_SHAPE_SIZE)
+      shape.height = origBottom - newY
+      shape.y = newY
+      shape.width = Math.max(MIN_SHAPE_SIZE, norm.x - orig.x)
+    } else if (corner === 'tl') {
+      const newX = Math.min(norm.x, origRight - MIN_SHAPE_SIZE)
+      const newY = Math.min(norm.y, origBottom - MIN_SHAPE_SIZE)
+      shape.x = newX
+      shape.y = newY
+      shape.width = origRight - newX
+      shape.height = origBottom - newY
+    }
+  }, [])
+
+  const handleShapeMouseDown = useCallback((screen, norm) => {
+    if (pendingShapeRef.current) {
+      const shape = shapesRef.current.get(pendingShapeRef.current.shapeId)
+      if (shape) {
+        const corner = hitTestShapeHandle(
+          screen.x,
+          screen.y,
+          shape,
+          worldToScreen,
+          cameraRef.current.zoom
+        )
+        if (corner) {
+          shapeResizeDragRef.current = {
+            corner,
+            shapeId: shape.shapeId,
+            orig: { ...shape },
+            moved: false,
+          }
+          redrawAllRef.current()
+          return
+        }
+      }
+      lockPendingShape()
+      redrawAllRef.current()
+    }
+
+    shapeDragRef.current = {
+      startX: norm.x,
+      startY: norm.y,
+      currentX: norm.x,
+      currentY: norm.y,
+    }
+    redrawAllRef.current()
+  }, [worldToScreen, lockPendingShape])
+
+  const handleShapeMouseMove = useCallback((norm) => {
+    const resizeDrag = shapeResizeDragRef.current
+    if (resizeDrag) {
+      const shape = shapesRef.current.get(resizeDrag.shapeId)
+      if (shape) {
+        resizeDrag.moved = true
+        shape.x = resizeDrag.orig.x
+        shape.y = resizeDrag.orig.y
+        shape.width = resizeDrag.orig.width
+        shape.height = resizeDrag.orig.height
+        resizeShapeFromCorner(shape, resizeDrag.corner, norm, resizeDrag.orig)
+        redrawAllRef.current()
+      }
+      return
+    }
+
+    if (shapeDragRef.current) {
+      shapeDragRef.current.currentX = norm.x
+      shapeDragRef.current.currentY = norm.y
+      redrawAllRef.current()
+    }
+  }, [resizeShapeFromCorner])
+
+  const handleShapeMouseUp = useCallback(() => {
+    const resizeDrag = shapeResizeDragRef.current
+    if (resizeDrag) {
+      const shape = shapesRef.current.get(resizeDrag.shapeId)
+      shapeResizeDragRef.current = null
+
+      if (shape && resizeDrag.moved) {
+        persistAndSend({
+          type: 'SHAPE_RESIZE',
+          shapeId: resizeDrag.shapeId,
+          x: shape.x,
+          y: shape.y,
+          width: shape.width,
+          height: shape.height,
+        })
+      }
+
+      lockPendingShape()
+      redrawAllRef.current()
+      return
+    }
+
+    const drag = shapeDragRef.current
+    if (!drag) return
+
+    shapeDragRef.current = null
+    const shapeProps = buildShapeFromDrag(
+      drag.startX,
+      drag.startY,
+      drag.currentX,
+      drag.currentY,
+      shapeTypeRef.current
+    )
+
+    if (isShapeLargeEnough(shapeProps, shapeTypeRef.current) && shapeTypeRef.current) {
+      const event = {
+        type: 'SHAPE_ADD',
+        shapeId: crypto.randomUUID(),
+        shapeType: shapeTypeRef.current,
+        ...shapeProps,
+        color: strokeColorRef.current,
+        strokeWidth: DEFAULT_STROKE_WIDTH,
+      }
+      persistAndSend(event)
+      pendingShapeRef.current = { shapeId: event.shapeId }
+    }
+
+    redrawAllRef.current()
+  }, [lockPendingShape, persistAndSend])
 
   useEffect(() => {
     registerRemoteHandler?.((event) => handleEvent(event))
@@ -347,33 +622,24 @@ const Canvas = forwardRef(function Canvas(
     if (!snapshotEvents.length) return
 
     const loadSnapshot = async () => {
-      allEventsRef.current = []
+      allEventsRef.current = [...snapshotEvents]
       imagesRef.current.clear()
       strokes.current.clear()
+      shapesRef.current.clear()
       clearSelection()
+      lockPendingShape()
+      shapeDragRef.current = null
 
       for (const event of snapshotEvents) {
         if (event.type === 'IMAGE_ADD') {
-          allEventsRef.current.push(event)
           await applyImageAdd(event)
-        } else if (event.type === 'IMAGE_MOVE') {
-          allEventsRef.current.push(event)
-          applyImageMove(event)
-        } else if (event.type === 'IMAGE_RESIZE') {
-          allEventsRef.current.push(event)
-          applyImageResize(event)
-        } else if (event.type === 'IMAGE_DELETE') {
-          allEventsRef.current.push(event)
-          applyImageDelete(event)
-        } else {
-          allEventsRef.current.push(event)
         }
       }
-      redrawAllRef.current()
+      await redrawAllRef.current()
     }
 
     loadSnapshot()
-  }, [snapshotEvents, applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, clearSelection])
+  }, [snapshotEvents, applyImageAdd, clearSelection, lockPendingShape])
 
   useEffect(() => {
     const container = containerRef.current
@@ -717,6 +983,11 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
+    if (mode === 'shape') {
+      handleShapeMouseDown(screen, norm)
+      return
+    }
+
     isDrawing.current = true
     strokeId.current = crypto.randomUUID()
 
@@ -725,8 +996,8 @@ const Canvas = forwardRef(function Canvas(
       strokeId: strokeId.current,
       x: norm.x,
       y: norm.y,
-      color: '#000000',
-      width: 3,
+      color: strokeColorRef.current,
+      width: DEFAULT_STROKE_WIDTH,
     }
 
     handleEvent(event)
@@ -744,6 +1015,11 @@ const Canvas = forwardRef(function Canvas(
 
     if (mode === 'select' && dragRef.current) {
       handleSelectMouseMove(norm)
+      return
+    }
+
+    if (mode === 'shape') {
+      handleShapeMouseMove(norm)
       return
     }
 
@@ -768,6 +1044,11 @@ const Canvas = forwardRef(function Canvas(
 
     if (mode === 'select') {
       handleSelectMouseUp()
+      return
+    }
+
+    if (mode === 'shape') {
+      handleShapeMouseUp()
       return
     }
 
@@ -815,6 +1096,11 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
+    if (mode === 'shape') {
+      handleShapeMouseDown(screen, norm)
+      return
+    }
+
     isDrawing.current = true
     strokeId.current = crypto.randomUUID()
     const event = {
@@ -822,8 +1108,8 @@ const Canvas = forwardRef(function Canvas(
       strokeId: strokeId.current,
       x: norm.x,
       y: norm.y,
-      color: '#000000',
-      width: 3,
+      color: strokeColorRef.current,
+      width: DEFAULT_STROKE_WIDTH,
     }
     handleEvent(event)
     sendDraw(event)
@@ -874,6 +1160,12 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
+    if (mode === 'shape') {
+      e.preventDefault()
+      handleShapeMouseMove(norm)
+      return
+    }
+
     if (!isDrawing.current) return
 
     e.preventDefault()
@@ -891,6 +1183,11 @@ const Canvas = forwardRef(function Canvas(
 
     if (mode === 'select') {
       handleSelectMouseUp()
+      return
+    }
+
+    if (mode === 'shape') {
+      handleShapeMouseUp()
       return
     }
 
@@ -964,7 +1261,13 @@ const Canvas = forwardRef(function Canvas(
           width: '100%',
           height: '100%',
           display: 'block',
-          cursor: mode === 'select' ? 'default' : mode === 'sticker' ? 'cell' : 'crosshair',
+          cursor: mode === 'select'
+            ? 'default'
+            : mode === 'sticker'
+              ? 'cell'
+              : mode === 'shape'
+                ? 'crosshair'
+                : 'crosshair',
           touchAction: 'none',
         }}
         onWheel={handleWheel}

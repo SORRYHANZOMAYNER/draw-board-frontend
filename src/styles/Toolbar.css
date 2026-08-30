@@ -50,20 +50,129 @@
   background: #eff6ff;
   border-color: #2563eb;
 }
-.toolbar-icon-img {
-  width: 20px;
-  height: 20px;
-  object-fit: contain;
-  pointer-events: none;
-}
+
 .toolbar-btn-label {
   font-size: 11px;
   font-weight: 600;
 }
+
 .toolbar-icon {
   width: 20px;
   height: 20px;
 }
+
+.toolbar-draw-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.toolbar-palette-wrap {
+  position: relative;
+}
+
+.toolbar-palette-icon {
+  overflow: visible;
+}
+
+.toolbar-palette-popup {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  animation: toolbar-palette-slide-in 0.16s ease-out;
+}
+
+@keyframes toolbar-palette-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+.toolbar-color-swatch {
+  width: 24px;
+  height: 24px;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.toolbar-color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.toolbar-color-swatch.active {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px #eff6ff;
+}
+
+.toolbar-color-swatch[style*='#ffffff'],
+.toolbar-color-swatch[style*='#fff'] {
+  background-color: #ffffff !important;
+}
+
+.toolbar-shapes-popup {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.14);
+  animation: toolbar-palette-slide-in 0.16s ease-out;
+}
+
+.toolbar-shape-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  padding: 0;
+  color: #374151;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.toolbar-shape-btn:hover {
+  transform: scale(1.04);
+  background: #f9fafb;
+}
+
+.toolbar-shape-btn.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.toolbar-shape-icon {
+  width: 22px;
+  height: 22px;
+}
+
 @media (max-width: 640px) {
   .toolbar {
     left: 8px;
@@ -74,5 +183,16 @@
     width: 36px;
     height: 36px;
     font-size: 16px;
+  }
+
+  .toolbar-palette-popup {
+    left: calc(100% + 6px);
+    gap: 5px;
+    padding: 6px;
+  }
+
+  .toolbar-color-swatch {
+    width: 22px;
+    height: 22px;
   }
 }
