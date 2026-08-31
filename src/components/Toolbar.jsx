@@ -80,6 +80,14 @@ function RegionSelectIcon() {
   )
 }
 
+function TextIcon() {
+  return (
+    <span className="toolbar-text-icon" aria-hidden="true">
+      T
+    </span>
+  )
+}
+
 function ShapesIcon() {
   return (
     <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -129,6 +137,17 @@ function ShapeToolIcon({ type }) {
   }
 }
 
+function IncognitoIcon() {
+  return (
+    <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5Zm0 12.5a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z"
+      />
+    </svg>
+  )
+}
+
 const TOOLS = [
   { id: 'select', icon: '↖', title: 'Выбор' },
   { id: 'draw', icon: '✏', title: 'Рисовать' },
@@ -154,6 +173,9 @@ export default function Toolbar({
   onResetView,
   onImageUpload,
   onClearAllRequest,
+  isTeacher = false,
+  incognitoMode = false,
+  onIncognitoToggle,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
@@ -216,6 +238,17 @@ export default function Toolbar({
             )}
           </button>
         ))}
+
+        <button
+          type="button"
+          className={`toolbar-btn${mode === 'text' ? ' active' : ''}`}
+          title="Текст"
+          aria-label="Текст"
+          aria-pressed={mode === 'text'}
+          onClick={() => onModeChange?.('text')}
+        >
+          <TextIcon />
+        </button>
 
         <div className="toolbar-palette-wrap">
           <button
@@ -302,6 +335,19 @@ export default function Toolbar({
         >
           <RegionSelectIcon />
         </button>
+
+        {isTeacher && (
+          <button
+            type="button"
+            className={`toolbar-btn toolbar-btn--incognito${incognitoMode ? ' active' : ''}`}
+            title={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
+            aria-label={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
+            aria-pressed={incognitoMode}
+            onClick={onIncognitoToggle}
+          >
+            <IncognitoIcon />
+          </button>
+        )}
       </div>
 
       <div className="toolbar-divider" />

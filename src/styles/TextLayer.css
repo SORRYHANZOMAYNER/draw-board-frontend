@@ -1,0 +1,29 @@
+.text-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 20;
+}
+
+.text-layer--pass-through .board-text-note {
+  pointer-events: none !important;
+}
+
+.text-layer .board-text-note {
+  pointer-events: auto;
+}
+
+.text-mode-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.82);
+  color: #fff;
+  font-size: 13px;
+  pointer-events: none;
+  white-space: nowrap;
+}

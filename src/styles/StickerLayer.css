@@ -6,6 +6,10 @@
   z-index: 10;
 }
 
+.sticker-layer--pass-through .sticker-note {
+  pointer-events: none !important;
+}
+
 .sticker-mode-hint {
   position: absolute;
   left: 50%;

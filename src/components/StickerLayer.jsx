@@ -5,6 +5,7 @@ export default function StickerLayer({
   stickers,
   camera,
   mode,
+  ignorePointer = false,
   selectedStickerId,
   focusStickerId,
   onSelectSticker,
@@ -18,7 +19,7 @@ export default function StickerLayer({
   const stickerList = [...stickers.values()]
 
   return (
-    <div className="sticker-layer" aria-label="Стикеры">
+    <div className={`sticker-layer${ignorePointer ? ' sticker-layer--pass-through' : ''}`} aria-label="Стикеры">
       {stickerList.map((sticker) => (
         <StickerNote
           key={sticker.stickerId}

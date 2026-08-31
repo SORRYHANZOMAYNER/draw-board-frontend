@@ -4,8 +4,9 @@ import {
   WORLD_HEIGHT,
   DEFAULT_STROKE_WIDTH,
   MIN_SHAPE_SIZE,
+  imageDimensionsForZoom,
 } from '../constants/board.js'
-import { buildCanvasStateFromEvents } from '../lib/canvasClear.js'
+import { buildCanvasStateFromEvents, mergeCanvasStates, normalizeRect } from '../lib/canvasClear.js'
 import {
   drawShape,
   drawShapeSelection,
@@ -15,7 +16,7 @@ import {
 } from '../lib/shapeDraw.js'
 const MAX_IMAGE_PX = 800
 const MIN_IMAGE_SIZE = 0.02
-const HANDLE_RADIUS = 10
+const HANDLE_RADIUS = 14
 
 function compressImage(file) {
   return new Promise((resolve, reject) => {
@@ -55,6 +56,9 @@ const Canvas = forwardRef(function Canvas(
     onBoardClick,
     onImageSelectionChange,
     onImageContextMenu,
+    incognitoMode = false,
+    onClearApplied,
+    onIncognitoCanvasChange,
   },
   ref
 ) {
@@ -78,12 +82,19 @@ const Canvas = forwardRef(function Canvas(
   const imagesRef = useRef(new Map())
   const shapesRef = useRef(new Map())
   const allEventsRef = useRef([])
+  const incognitoEventsRef = useRef([])
+  const incognitoModeRef = useRef(incognitoMode)
+  const incognitoEntitiesRef = useRef(new Set())
   const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
   const dragRef = useRef(null)
   const shapeDragRef = useRef(null)
   const pendingShapeRef = useRef(null)
   const shapeResizeDragRef = useRef(null)
+  const regionClearDragRef = useRef(null)
+  const regionClearPointerIdRef = useRef(null)
+  const selectPointerIdRef = useRef(null)
 
+  const [regionClearPreview, setRegionClearPreview] = useState(null)
   const [, forceRender] = useState(0)
 
   const notifyCameraChange = useCallback(() => {
@@ -110,6 +121,44 @@ const Canvas = forwardRef(function Canvas(
     shapeTypeRef.current = shapeType
   }, [shapeType])
 
+  useEffect(() => {
+    incognitoModeRef.current = incognitoMode
+  }, [incognitoMode])
+
+  const resolveEventsRef = useCallback((layer = 'auto') => {
+    if (layer === 'public') return allEventsRef
+    if (layer === 'private') return incognitoEventsRef
+    return incognitoModeRef.current ? incognitoEventsRef : allEventsRef
+  }, [])
+
+  const entityKeyFromEvent = useCallback((event) => {
+    if (event.strokeId) return `stroke:${event.strokeId}`
+    if (event.imageId) return `image:${event.imageId}`
+    if (event.shapeId) return `shape:${event.shapeId}`
+    return null
+  }, [])
+
+  const markIncognitoEntity = useCallback((event) => {
+    const key = entityKeyFromEvent(event)
+    if (key && incognitoModeRef.current) {
+      incognitoEntitiesRef.current.add(key)
+    }
+  }, [entityKeyFromEvent])
+
+  const isPrivateEntity = useCallback((event) => {
+    const key = entityKeyFromEvent(event)
+    if (key && incognitoEntitiesRef.current.has(key)) return true
+    if (!key || !incognitoModeRef.current) return false
+    return incognitoEventsRef.current.some((stored) => entityKeyFromEvent(stored) === key)
+  }, [entityKeyFromEvent])
+
+  const notifyIncognitoCanvasChange = useCallback(() => {
+    onIncognitoCanvasChange?.({
+      canvasEvents: [...incognitoEventsRef.current],
+      entityKeys: [...incognitoEntitiesRef.current],
+    })
+  }, [onIncognitoCanvasChange])
+
   const lockPendingShape = useCallback(() => {
     pendingShapeRef.current = null
     shapeResizeDragRef.current = null
@@ -124,6 +173,11 @@ const Canvas = forwardRef(function Canvas(
     if (mode !== 'shape') {
       lockPendingShape()
       shapeDragRef.current = null
+    }
+    if (mode !== 'region-clear') {
+      regionClearDragRef.current = null
+      regionClearPointerIdRef.current = null
+      setRegionClearPreview(null)
     }
   }, [mode, clearSelection, lockPendingShape])
 
@@ -207,11 +261,12 @@ const Canvas = forwardRef(function Canvas(
     ]
 
     handles.forEach((h) => {
+      const half = HANDLE_RADIUS / 2
       ctx.fillStyle = '#2563eb'
-      ctx.fillRect(h.x - 5, h.y - 5, 10, 10)
+      ctx.fillRect(h.x - half, h.y - half, HANDLE_RADIUS, HANDLE_RADIUS)
       ctx.strokeStyle = '#fff'
       ctx.lineWidth = 1
-      ctx.strokeRect(h.x - 5, h.y - 5, 10, 10)
+      ctx.strokeRect(h.x - half, h.y - half, HANDLE_RADIUS, HANDLE_RADIUS)
     })
   }, [getImageScreenRect])
 
@@ -271,6 +326,19 @@ const Canvas = forwardRef(function Canvas(
       }
     }
   }, [mode, worldToScreen])
+
+  const updateRegionClearPreview = useCallback((drag) => {
+    if (!drag) {
+      setRegionClearPreview(null)
+      return
+    }
+
+    const rect = normalizeRect(drag.startX, drag.startY, drag.currentX, drag.currentY)
+    const tl = worldToScreen(rect.x * WORLD_WIDTH, rect.y * WORLD_HEIGHT)
+    const w = rect.width * WORLD_WIDTH * cameraRef.current.zoom
+    const h = rect.height * WORLD_HEIGHT * cameraRef.current.zoom
+    setRegionClearPreview({ left: tl.x, top: tl.y, width: w, height: h })
+  }, [worldToScreen])
 
   const drawImagesOnTop = useCallback(() => {
     drawImages()
@@ -350,17 +418,35 @@ const Canvas = forwardRef(function Canvas(
     ctx.fillStyle = '#ffffff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
-    const { strokePaths, images: builtImages, shapes } = buildCanvasStateFromEvents(allEventsRef.current)
+    const publicState = buildCanvasStateFromEvents(allEventsRef.current)
+    const privateState = buildCanvasStateFromEvents(incognitoEventsRef.current)
+    const { strokePaths, images: builtImages, shapes } = mergeCanvasStates(publicState, privateState)
     shapesRef.current = shapes
 
     strokes.current.clear()
     const previousImages = imagesRef.current
+    const drag = dragRef.current
+    let preservedLive = null
+    if (drag && (drag.type === 'move' || drag.type === 'resize')) {
+      const live = previousImages.get(drag.imageId)
+      if (live) {
+        preservedLive = {
+          x: live.x,
+          y: live.y,
+          imageWidth: live.imageWidth,
+          imageHeight: live.imageHeight,
+        }
+      }
+    }
     imagesRef.current.clear()
 
     for (const [, img] of builtImages) {
       const previous = previousImages.get(img.imageId)
+      const merged = preservedLive && img.imageId === drag?.imageId
+        ? { ...img, ...preservedLive }
+        : img
       imagesRef.current.set(img.imageId, {
-        ...img,
+        ...merged,
         element: previous?.element ?? null,
       })
     }
@@ -412,14 +498,80 @@ const Canvas = forwardRef(function Canvas(
     forceRender((n) => n + 1)
   }, [notifyCameraChange])
 
-  const persistAndSend = useCallback((event) => {
-    allEventsRef.current.push(event)
-    sendDraw(event)
-  }, [sendDraw])
+  const isNewIncognitoCreation = useCallback((event) => {
+    if (!incognitoModeRef.current) return false
+    return event.type === 'STROKE_START'
+      || event.type === 'SHAPE_ADD'
+      || event.type === 'IMAGE_ADD'
+  }, [])
 
-  const handleEvent = useCallback(async (event, { persist = true } = {}) => {
+  const isPrivateEvent = useCallback((event) => (
+    isPrivateEntity(event) || isNewIncognitoCreation(event)
+  ), [isPrivateEntity, isNewIncognitoCreation])
+
+  const applyClearEvent = useCallback(async () => {
+    shapeDragRef.current = null
+    lockPendingShape()
+    regionClearDragRef.current = null
+    setRegionClearPreview(null)
+    await redrawAllRef.current()
+  }, [lockPendingShape])
+
+  const notifyClearApplied = useCallback((event) => {
+    onClearApplied?.({
+      ...event,
+      incognito: incognitoModeRef.current,
+    })
+  }, [onClearApplied])
+
+  const persistAndSend = useCallback((event) => {
+    if (event.type === 'BOARD_CLEAR') {
+      if (incognitoModeRef.current) {
+        incognitoEventsRef.current.push(event)
+        incognitoEntitiesRef.current.clear()
+        notifyIncognitoCanvasChange()
+      } else {
+        allEventsRef.current.push(event)
+        sendDraw(event)
+      }
+      return
+    }
+
+    if (event.type === 'REGION_CLEAR') {
+      if (incognitoModeRef.current) {
+        incognitoEventsRef.current.push(event)
+        notifyIncognitoCanvasChange()
+      } else {
+        allEventsRef.current.push(event)
+        sendDraw(event)
+        incognitoEventsRef.current.push({ ...event })
+        notifyIncognitoCanvasChange()
+      }
+      return
+    }
+
+    if (event.type === 'STROKE_START' || event.type === 'SHAPE_ADD' || event.type === 'IMAGE_ADD') {
+      markIncognitoEntity(event)
+    }
+
+    const isPrivate = isPrivateEvent(event)
+    const ref = isPrivate ? incognitoEventsRef : allEventsRef
+    ref.current.push(event)
+    if (!isPrivate) {
+      sendDraw(event)
+    } else {
+      notifyIncognitoCanvasChange()
+    }
+  }, [sendDraw, markIncognitoEntity, isPrivateEvent, notifyIncognitoCanvasChange])
+
+  const handleEvent = useCallback(async (event, { persist = true, layer = 'auto' } = {}) => {
+    const eventsRef = resolveEventsRef(layer)
+
     if (event.type === 'BOARD_CLEAR' || event.type === 'REGION_CLEAR') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) eventsRef.current.push(event)
+      if (event.type === 'BOARD_CLEAR' && layer !== 'public' && incognitoModeRef.current) {
+        incognitoEntitiesRef.current.clear()
+      }
       shapeDragRef.current = null
       lockPendingShape()
       await redrawAllRef.current()
@@ -427,42 +579,160 @@ const Canvas = forwardRef(function Canvas(
     }
 
     if (event.type === 'SHAPE_ADD' || event.type === 'SHAPE_RESIZE' || event.type === 'SHAPE_DELETE') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) {
+        const ref = isPrivateEvent(event) ? incognitoEventsRef : allEventsRef
+        ref.current.push(event)
+      }
       await redrawAllRef.current()
       return
     }
 
     if (event.type === 'IMAGE_ADD') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) {
+        const ref = isPrivateEvent(event) ? incognitoEventsRef : allEventsRef
+        ref.current.push(event)
+      }
       await applyImageAdd(event)
       redrawAllRef.current()
       return
     }
 
     if (event.type === 'IMAGE_MOVE') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) {
+        const ref = isPrivateEntity(event) ? incognitoEventsRef : allEventsRef
+        ref.current.push(event)
+      }
       applyImageMove(event)
       redrawAllRef.current()
       return
     }
 
     if (event.type === 'IMAGE_RESIZE') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) {
+        const ref = isPrivateEntity(event) ? incognitoEventsRef : allEventsRef
+        ref.current.push(event)
+      }
       applyImageResize(event)
       redrawAllRef.current()
       return
     }
 
     if (event.type === 'IMAGE_DELETE') {
-      if (persist) allEventsRef.current.push(event)
+      if (persist) {
+        const ref = isPrivateEntity(event) ? incognitoEventsRef : allEventsRef
+        ref.current.push(event)
+        if (isPrivateEntity(event)) {
+          incognitoEntitiesRef.current.delete(`image:${event.imageId}`)
+        }
+      }
       applyImageDelete(event)
       redrawAllRef.current()
       return
     }
 
-    if (persist) allEventsRef.current.push(event)
+    if (persist) {
+      const ref = isPrivateEvent(event) ? incognitoEventsRef : allEventsRef
+      ref.current.push(event)
+    }
     applyStrokeEvent(event, { refreshImages: true })
-  }, [applyImageAdd, applyImageMove, applyImageResize, applyImageDelete, applyStrokeEvent, lockPendingShape])
+  }, [
+    applyImageAdd,
+    applyImageMove,
+    applyImageResize,
+    applyImageDelete,
+    applyStrokeEvent,
+    lockPendingShape,
+    resolveEventsRef,
+    isPrivateEvent,
+  ])
+
+  const handleRegionClearMouseUp = useCallback(async () => {
+    const drag = regionClearDragRef.current
+    regionClearDragRef.current = null
+    setRegionClearPreview(null)
+    if (!drag) return
+
+    const rect = normalizeRect(drag.startX, drag.startY, drag.currentX, drag.currentY)
+    if (rect.width < MIN_SHAPE_SIZE || rect.height < MIN_SHAPE_SIZE) {
+      return
+    }
+
+    const event = {
+      type: 'REGION_CLEAR',
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    }
+
+    notifyClearApplied(event)
+    persistAndSend(event)
+    await applyClearEvent()
+  }, [persistAndSend, applyClearEvent, notifyClearApplied])
+
+  const handleRegionClearPointerDown = useCallback((e) => {
+    if (mode !== 'region-clear' || e.button !== 0) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    canvas.setPointerCapture(e.pointerId)
+    regionClearPointerIdRef.current = e.pointerId
+
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    regionClearDragRef.current = {
+      startX: norm.x,
+      startY: norm.y,
+      currentX: norm.x,
+      currentY: norm.y,
+    }
+    updateRegionClearPreview(regionClearDragRef.current)
+  }, [mode, updateRegionClearPreview])
+
+  const handleRegionClearPointerMove = useCallback((e) => {
+    if (regionClearPointerIdRef.current !== e.pointerId || !regionClearDragRef.current) return
+
+    e.preventDefault()
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    regionClearDragRef.current.currentX = norm.x
+    regionClearDragRef.current.currentY = norm.y
+    updateRegionClearPreview(regionClearDragRef.current)
+  }, [updateRegionClearPreview])
+
+  const handleRegionClearPointerUp = useCallback((e) => {
+    if (regionClearPointerIdRef.current !== e.pointerId) return
+
+    e.preventDefault()
+    const canvas = canvasRef.current
+    if (canvas?.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId)
+    }
+    regionClearPointerIdRef.current = null
+    handleRegionClearMouseUp()
+  }, [handleRegionClearMouseUp])
+
+  const clearBoard = useCallback(async () => {
+    const event = { type: 'BOARD_CLEAR' }
+    notifyClearApplied(event)
+    persistAndSend(event)
+    await applyClearEvent()
+  }, [persistAndSend, applyClearEvent, notifyClearApplied])
+
+  const loadIncognitoState = useCallback(async ({ canvasEvents = [], entityKeys = [] }) => {
+    incognitoEventsRef.current = [...canvasEvents]
+    incognitoEntitiesRef.current = new Set(entityKeys)
+    await redrawAllRef.current()
+  }, [])
+
+  const getIncognitoState = useCallback(() => ({
+    canvasEvents: [...incognitoEventsRef.current],
+    entityKeys: [...incognitoEntitiesRef.current],
+  }), [])
 
   const resizeShapeFromCorner = useCallback((shape, corner, norm, orig) => {
     if (shape.shapeType === 'line') {
@@ -615,7 +885,7 @@ const Canvas = forwardRef(function Canvas(
   }, [lockPendingShape, persistAndSend])
 
   useEffect(() => {
-    registerRemoteHandler?.((event) => handleEvent(event))
+    registerRemoteHandler?.((event) => handleEvent(event, { layer: 'public' }))
   }, [handleEvent, registerRemoteHandler])
 
   useEffect(() => {
@@ -723,8 +993,13 @@ const Canvas = forwardRef(function Canvas(
     if (!canvas) return
 
     const centerWorld = screenToWorld(canvas.width / 2, canvas.height / 2)
-    const imageWidth = (pixelWidth / WORLD_WIDTH) * 0.5
-    const imageHeight = (pixelHeight / WORLD_HEIGHT) * 0.5
+    const { imageWidth, imageHeight } = imageDimensionsForZoom(
+      pixelWidth,
+      pixelHeight,
+      cameraRef.current.zoom,
+      canvas.width,
+      canvas.height
+    )
 
     const event = {
       type: 'IMAGE_ADD',
@@ -736,11 +1011,11 @@ const Canvas = forwardRef(function Canvas(
       data: dataUrl,
     }
 
-    await handleEvent(event)
-    sendDraw(event)
+    await handleEvent(event, { persist: false })
+    persistAndSend(event)
     setSelection(event.imageId)
     onModeChange?.('select')
-  }, [screenToWorld, handleEvent, sendDraw, setSelection, onModeChange])
+  }, [screenToWorld, handleEvent, persistAndSend, setSelection, onModeChange])
 
   const handlePaste = useCallback(async (e) => {
     const items = e.clipboardData?.items
@@ -819,24 +1094,49 @@ const Canvas = forwardRef(function Canvas(
   }
 
   const handleSelectMouseDown = (screen, norm) => {
+    const startResizeDrag = (id, img, corner) => {
+      setSelection(id)
+      dragRef.current = {
+        type: 'resize',
+        corner,
+        imageId: id,
+        orig: {
+          x: img.x,
+          y: img.y,
+          imageWidth: img.imageWidth,
+          imageHeight: img.imageHeight,
+        },
+        moved: false,
+      }
+      redrawAllRef.current()
+    }
+
+    const selectedId = selectedImageIdRef.current
+    if (selectedId) {
+      const selected = imagesRef.current.get(selectedId)
+      if (selected) {
+        const corner = hitTestHandle(screen.x, screen.y, selected)
+        if (corner) {
+          startResizeDrag(selectedId, selected, corner)
+          return
+        }
+      }
+    }
+
+    for (const [id, img] of [...imagesRef.current.entries()].reverse()) {
+      if (id === selectedId) continue
+      const corner = hitTestHandle(screen.x, screen.y, img)
+      if (corner) {
+        startResizeDrag(id, img, corner)
+        return
+      }
+    }
+
     const hitId = hitTestImage(norm.x, norm.y)
 
     if (hitId) {
       const img = imagesRef.current.get(hitId)
       setSelection(hitId)
-
-      const corner = hitTestHandle(screen.x, screen.y, img)
-      if (corner) {
-        dragRef.current = {
-          type: 'resize',
-          corner,
-          imageId: hitId,
-          orig: { ...img },
-          moved: false,
-        }
-        redrawAllRef.current()
-        return
-      }
 
       dragRef.current = {
         type: 'move',
@@ -937,15 +1237,57 @@ const Canvas = forwardRef(function Canvas(
     redrawAllRef.current()
   }
 
+  const releaseSelectPointerCapture = (pointerId) => {
+    const canvas = canvasRef.current
+    if (canvas?.hasPointerCapture(pointerId)) {
+      canvas.releasePointerCapture(pointerId)
+    }
+    if (selectPointerIdRef.current === pointerId) {
+      selectPointerIdRef.current = null
+    }
+  }
+
+  const handleSelectPointerDown = (e) => {
+    if (mode !== 'select' || e.button !== 0 || e.shiftKey) return
+
+    e.preventDefault()
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    canvas.setPointerCapture(e.pointerId)
+    selectPointerIdRef.current = e.pointerId
+
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    handleSelectMouseDown(screen, norm)
+  }
+
+  const handleSelectPointerMove = (e) => {
+    if (selectPointerIdRef.current !== e.pointerId || !dragRef.current) return
+
+    e.preventDefault()
+    const norm = getWorldNormalized(getScreenCoords(e))
+    handleSelectMouseMove(norm)
+  }
+
+  const handleSelectPointerUp = (e) => {
+    if (selectPointerIdRef.current !== e.pointerId) return
+
+    e.preventDefault()
+    releaseSelectPointerCapture(e.pointerId)
+    handleSelectMouseUp()
+  }
+
   const deleteImageById = useCallback((imageId) => {
     if (!imageId || !imagesRef.current.has(imageId)) return false
 
-    applyImageDelete({ imageId })
-    allEventsRef.current.push({ type: 'IMAGE_DELETE', imageId })
-    sendDraw({ type: 'IMAGE_DELETE', imageId })
+    const event = { type: 'IMAGE_DELETE', imageId }
+    applyImageDelete(event)
+    persistAndSend(event)
     redrawAllRef.current()
     return true
-  }, [applyImageDelete, sendDraw])
+  }, [applyImageDelete, persistAndSend])
 
   const handleCanvasContextMenu = (e) => {
     e.preventDefault()
@@ -968,17 +1310,17 @@ const Canvas = forwardRef(function Canvas(
       return
     }
     if (e.button !== 0) return
+    if (mode === 'region-clear') return
     e.preventDefault()
 
     const screen = getScreenCoords(e)
     const norm = getWorldNormalized(screen)
 
     if (mode === 'select') {
-      handleSelectMouseDown(screen, norm)
       return
     }
 
-    if (mode === 'sticker') {
+    if (mode === 'sticker' || mode === 'text') {
       onBoardClick?.(norm)
       return
     }
@@ -1000,8 +1342,8 @@ const Canvas = forwardRef(function Canvas(
       width: DEFAULT_STROKE_WIDTH,
     }
 
-    handleEvent(event)
-    sendDraw(event)
+    handleEvent(event, { persist: false })
+    persistAndSend(event)
   }
 
   const handleMouseMove = (e) => {
@@ -1013,13 +1355,17 @@ const Canvas = forwardRef(function Canvas(
     const screen = getScreenCoords(e)
     const norm = getWorldNormalized(screen)
 
-    if (mode === 'select' && dragRef.current) {
+    if (mode === 'select' && dragRef.current && selectPointerIdRef.current == null) {
       handleSelectMouseMove(norm)
       return
     }
 
     if (mode === 'shape') {
       handleShapeMouseMove(norm)
+      return
+    }
+
+    if (mode === 'region-clear') {
       return
     }
 
@@ -1032,17 +1378,39 @@ const Canvas = forwardRef(function Canvas(
       x: norm.x,
       y: norm.y,
     }
-    handleEvent(event)
-    sendDraw(event)
+    handleEvent(event, { persist: false })
+    persistAndSend(event)
+  }
+
+  const handleMouseLeave = (e) => {
+    if (dragRef.current && selectPointerIdRef.current != null) return
+    handleMouseUp(e)
+  }
+
+  const handleCanvasPointerDown = (e) => {
+    handleRegionClearPointerDown(e)
+    handleSelectPointerDown(e)
+  }
+
+  const handleCanvasPointerMove = (e) => {
+    handleRegionClearPointerMove(e)
+    handleSelectPointerMove(e)
+  }
+
+  const handleCanvasPointerUp = (e) => {
+    handleRegionClearPointerUp(e)
+    handleSelectPointerUp(e)
   }
 
   const handleMouseUp = (e) => {
+    if (regionClearPointerIdRef.current != null) return
+
     if (isPanning.current) {
       endPan()
       return
     }
 
-    if (mode === 'select') {
+    if (mode === 'select' && selectPointerIdRef.current == null) {
       handleSelectMouseUp()
       return
     }
@@ -1055,8 +1423,7 @@ const Canvas = forwardRef(function Canvas(
     if (!isDrawing.current) return
 
     isDrawing.current = false
-    sendDraw({ type: 'STROKE_END', strokeId: strokeId.current })
-    allEventsRef.current.push({ type: 'STROKE_END', strokeId: strokeId.current })
+    persistAndSend({ type: 'STROKE_END', strokeId: strokeId.current })
     strokes.current.delete(strokeId.current)
   }
 
@@ -1087,17 +1454,20 @@ const Canvas = forwardRef(function Canvas(
     const norm = getWorldNormalized(screen)
 
     if (mode === 'select') {
-      handleSelectMouseDown(screen, norm)
       return
     }
 
-    if (mode === 'sticker') {
+    if (mode === 'sticker' || mode === 'text') {
       onBoardClick?.(norm)
       return
     }
 
     if (mode === 'shape') {
       handleShapeMouseDown(screen, norm)
+      return
+    }
+
+    if (mode === 'region-clear') {
       return
     }
 
@@ -1111,8 +1481,8 @@ const Canvas = forwardRef(function Canvas(
       color: strokeColorRef.current,
       width: DEFAULT_STROKE_WIDTH,
     }
-    handleEvent(event)
-    sendDraw(event)
+    handleEvent(event, { persist: false })
+    persistAndSend(event)
   }
 
   const handleTouchMove = (e) => {
@@ -1154,7 +1524,7 @@ const Canvas = forwardRef(function Canvas(
     const screen = getScreenCoords(e)
     const norm = getWorldNormalized(screen)
 
-    if (mode === 'select' && dragRef.current) {
+    if (mode === 'select' && dragRef.current && selectPointerIdRef.current == null) {
       e.preventDefault()
       handleSelectMouseMove(norm)
       return
@@ -1166,12 +1536,16 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
+    if (mode === 'region-clear') {
+      return
+    }
+
     if (!isDrawing.current) return
 
     e.preventDefault()
     const event = { type: 'STROKE_MOVE', strokeId: strokeId.current, x: norm.x, y: norm.y }
-    handleEvent(event)
-    sendDraw(event)
+    handleEvent(event, { persist: false })
+    persistAndSend(event)
   }
 
   const handleTouchEnd = (e) => {
@@ -1181,7 +1555,7 @@ const Canvas = forwardRef(function Canvas(
       lastPanPoint.current = null
     }
 
-    if (mode === 'select') {
+    if (mode === 'select' && selectPointerIdRef.current == null) {
       handleSelectMouseUp()
       return
     }
@@ -1193,8 +1567,7 @@ const Canvas = forwardRef(function Canvas(
 
     if (isDrawing.current && e.touches.length === 0) {
       isDrawing.current = false
-      sendDraw({ type: 'STROKE_END', strokeId: strokeId.current })
-      allEventsRef.current.push({ type: 'STROKE_END', strokeId: strokeId.current })
+      persistAndSend({ type: 'STROKE_END', strokeId: strokeId.current })
       strokes.current.delete(strokeId.current)
     }
   }
@@ -1234,6 +1607,9 @@ const Canvas = forwardRef(function Canvas(
     zoomOut,
     resetView,
     importImageFile,
+    clearBoard,
+    loadIncognitoState,
+    getIncognitoState,
     getSelectedImageId: () => selectedImageIdRef.current,
     clearSelection,
     deleteSelectedImage: () => {
@@ -1241,12 +1617,20 @@ const Canvas = forwardRef(function Canvas(
       return imageId ? deleteImageById(imageId) : false
     },
     deleteImageById,
-  }), [importImageFile, clearSelection, deleteImageById])
+  }), [
+    importImageFile,
+    clearBoard,
+    loadIncognitoState,
+    getIncognitoState,
+    clearSelection,
+    deleteImageById,
+  ])
 
   return (
     <div
       ref={containerRef}
       style={{
+        position: 'relative',
         flex: 1,
         minHeight: 0,
         width: '100%',
@@ -1265,7 +1649,9 @@ const Canvas = forwardRef(function Canvas(
             ? 'default'
             : mode === 'sticker'
               ? 'cell'
-              : mode === 'shape'
+              : mode === 'text'
+                ? 'text'
+              : mode === 'shape' || mode === 'region-clear'
                 ? 'crosshair'
                 : 'crosshair',
           touchAction: 'none',
@@ -1274,12 +1660,33 @@ const Canvas = forwardRef(function Canvas(
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={handleCanvasPointerUp}
+        onPointerCancel={handleCanvasPointerUp}
         onContextMenu={handleCanvasContextMenu}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
+
+      {regionClearPreview && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: regionClearPreview.left,
+            top: regionClearPreview.top,
+            width: regionClearPreview.width,
+            height: regionClearPreview.height,
+            border: '2px dashed #2563eb',
+            background: 'rgba(37, 99, 235, 0.12)',
+            pointerEvents: 'none',
+            zIndex: 15,
+          }}
+        />
+      )}
     </div>
   )
 })

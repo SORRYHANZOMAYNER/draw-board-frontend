@@ -94,6 +94,26 @@
   background: #fff;
 }
 
+.board-workspace--incognito .board-canvas-area {
+  box-shadow: inset 0 0 0 3px #f59e0b;
+}
+
+.board-incognito-banner {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.95);
+  color: #78350f;
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
 .board-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .board-back-link { flex-shrink: 0; color: #2563eb; text-decoration: none; font-size: 14px; font-weight: 500; }
 .board-back-link:hover { text-decoration: underline; }

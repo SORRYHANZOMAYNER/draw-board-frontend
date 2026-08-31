@@ -1,4 +1,4 @@
-import { DEFAULT_STICKER_HEIGHT, DEFAULT_STICKER_WIDTH } from '../constants/board.js'
+import { DEFAULT_STICKER_HEIGHT, DEFAULT_STICKER_WIDTH, DEFAULT_TEXT_WIDTH, WORLD_HEIGHT } from '../constants/board.js'
 import { shapeIntersectsRect } from './shapeDraw.js'
 
 export function normalizeRect(x1, y1, x2, y2) {
@@ -59,6 +59,61 @@ export function stickerIntersectsRect(sticker, rect) {
     },
     rect
   )
+}
+
+export function getTextBounds(text) {
+  const fontSize = text.fontSize > 0 ? text.fontSize : 18
+  const width = text.width ?? DEFAULT_TEXT_WIDTH
+  const content = String(text.text ?? '')
+  const lineCount = Math.max(1, content.split('\n').length)
+  const lineHeight = fontSize / WORLD_HEIGHT
+  const estimatedLines = Math.max(
+    lineCount,
+    Math.ceil(content.length / Math.max(1, Math.floor((width * WORLD_HEIGHT) / (fontSize * 0.55))))
+  )
+  const height = Math.max(lineHeight * estimatedLines * 1.35, lineHeight * 2.5, 0.025)
+
+  return { x: text.x, y: text.y, width, height }
+}
+
+export function textIntersectsRect(text, rect) {
+  return rectsIntersect(getTextBounds(text), rect)
+}
+
+export function collectStickerIdsInRegion(stickers, rect) {
+  const ids = []
+  for (const [id, sticker] of stickers) {
+    if (stickerIntersectsRect(sticker, rect)) ids.push(id)
+  }
+  return ids
+}
+
+export function collectTextIdsInRegion(texts, rect) {
+  const ids = []
+  for (const [id, text] of texts) {
+    if (textIntersectsRect(text, rect)) ids.push(id)
+  }
+  return ids
+}
+
+export function filterStickersByRegion(stickers, rect) {
+  const next = new Map(stickers)
+  for (const [id, sticker] of stickers) {
+    if (stickerIntersectsRect(sticker, rect)) {
+      next.delete(id)
+    }
+  }
+  return next
+}
+
+export function filterTextsByRegion(texts, rect) {
+  const next = new Map(texts)
+  for (const [id, text] of texts) {
+    if (textIntersectsRect(text, rect)) {
+      next.delete(id)
+    }
+  }
+  return next
 }
 
 export function buildCanvasStateFromEvents(events) {
@@ -192,6 +247,14 @@ export function buildCanvasStateFromEvents(events) {
   }
 
   return { strokePaths, images, shapes }
+}
+
+export function mergeCanvasStates(publicState, privateState) {
+  return {
+    strokePaths: new Map([...publicState.strokePaths, ...privateState.strokePaths]),
+    images: new Map([...publicState.images, ...privateState.images]),
+    shapes: new Map([...publicState.shapes, ...privateState.shapes]),
+  }
 }
 
 export function applyClearEventsToStickers(events) {

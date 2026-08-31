@@ -1,0 +1,68 @@
+.board-text-note {
+  position: absolute;
+  box-sizing: border-box;
+  min-width: 80px;
+  min-height: 24px;
+  padding: 2px 4px;
+  background: transparent;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.board-text-note.selected {
+  outline: 1px dashed #2563eb;
+  outline-offset: 2px;
+}
+
+.board-text-note.draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.board-text-note.draggable:active {
+  cursor: grabbing;
+}
+
+.board-text-input {
+  display: block;
+  width: 100%;
+  min-width: 72px;
+  min-height: 1.4em;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 400;
+  line-height: 1.35;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  touch-action: manipulation;
+  cursor: text;
+}
+
+.board-text-note.editing {
+  min-width: 48px;
+}
+
+.board-text-note.locked {
+  width: max-content;
+}
+
+.board-text-static {
+  display: block;
+  line-height: 1.35;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: 400;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: none;
+  pointer-events: none;
+}
+
+.board-text-input::placeholder {
+  color: rgba(107, 114, 128, 0.6);
+}
