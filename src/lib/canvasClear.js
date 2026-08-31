@@ -205,17 +205,19 @@ export function buildCanvasStateFromEvents(events) {
       case 'STROKE_END':
         break
 
-      case 'IMAGE_ADD':
+      case 'IMAGE_ADD': {
+        const existing = images.get(event.imageId)
         images.set(event.imageId, {
           imageId: event.imageId,
           x: event.x,
           y: event.y,
           imageWidth: event.imageWidth,
           imageHeight: event.imageHeight,
-          data: event.data,
+          data: event.data ?? existing?.data,
           element: null,
         })
         break
+      }
 
       case 'IMAGE_MOVE': {
         const img = images.get(event.imageId)

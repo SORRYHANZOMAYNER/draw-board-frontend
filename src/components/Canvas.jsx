@@ -14,7 +14,8 @@ import {
   buildShapeFromDrag,
   isShapeLargeEnough,
 } from '../lib/shapeDraw.js'
-const MAX_IMAGE_PX = 800
+const MAX_IMAGE_PX = 512
+const MAX_IMAGE_DATA_URL_LENGTH = 400_000
 const MIN_IMAGE_SIZE = 0.02
 const HANDLE_RADIUS = 14
 
@@ -30,7 +31,7 @@ function compressImage(file) {
         canvas.height = Math.round(img.height * scale)
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
         resolve({
-          dataUrl: canvas.toDataURL('image/jpeg', 0.85),
+          dataUrl: canvas.toDataURL('image/jpeg', 0.75),
           pixelWidth: canvas.width,
           pixelHeight: canvas.height,
         })
@@ -71,6 +72,8 @@ const Canvas = forwardRef(function Canvas(
 
   const selectedImageIdRef = useRef(null)
   const redrawAllRef = useRef(() => {})
+  const paintCanvasRef = useRef(() => {})
+  const cameraInitializedRef = useRef(false)
 
   const isDrawing = useRef(false)
   const isPanning = useRef(false)
@@ -168,7 +171,7 @@ const Canvas = forwardRef(function Canvas(
     if (mode === 'draw') {
       clearSelection()
       dragRef.current = null
-      redrawAllRef.current()
+      paintCanvasRef.current()
     }
     if (mode !== 'shape') {
       lockPendingShape()
@@ -281,6 +284,10 @@ const Canvas = forwardRef(function Canvas(
         imgObj.element = img
         resolve(imgObj)
       }
+      img.onerror = () => {
+        console.error('Failed to decode board image', imgObj.imageId)
+        resolve(imgObj)
+      }
       img.src = imgObj.data
     })
   }, [])
@@ -373,17 +380,20 @@ const Canvas = forwardRef(function Canvas(
   }, [drawSegmentWorld, drawImagesOnTop])
 
   const applyImageAdd = useCallback(async (event) => {
+    const existing = imagesRef.current.get(event.imageId)
     const imgObj = {
       imageId: event.imageId,
       x: event.x,
       y: event.y,
       imageWidth: event.imageWidth,
       imageHeight: event.imageHeight,
-      data: event.data,
-      element: null,
+      data: event.data ?? existing?.data,
+      element: existing?.element ?? null,
     }
     imagesRef.current.set(event.imageId, imgObj)
-    await loadImageElement(imgObj)
+    if (!imgObj.element && imgObj.data) {
+      await loadImageElement(imgObj)
+    }
   }, [loadImageElement])
 
   const applyImageMove = useCallback((event) => {
@@ -409,7 +419,7 @@ const Canvas = forwardRef(function Canvas(
     }
   }, [clearSelection])
 
-  const redrawAll = useCallback(async () => {
+  const paintCanvas = useCallback(() => {
     const canvas = canvasRef.current
     const ctx = canvas?.getContext('2d')
     if (!canvas || !ctx) return
@@ -424,7 +434,7 @@ const Canvas = forwardRef(function Canvas(
     shapesRef.current = shapes
 
     strokes.current.clear()
-    const previousImages = imagesRef.current
+    const previousImages = new Map(imagesRef.current)
     const drag = dragRef.current
     let preservedLive = null
     if (drag && (drag.type === 'move' || drag.type === 'resize')) {
@@ -447,15 +457,9 @@ const Canvas = forwardRef(function Canvas(
         : img
       imagesRef.current.set(img.imageId, {
         ...merged,
+        data: merged.data ?? previous?.data ?? null,
         element: previous?.element ?? null,
       })
-    }
-
-    for (const [, img] of builtImages) {
-      const existing = imagesRef.current.get(img.imageId)
-      if (existing && !existing.element && existing.data) {
-        await loadImageElement(existing)
-      }
     }
 
     for (const [, stroke] of strokePaths) {
@@ -473,13 +477,27 @@ const Canvas = forwardRef(function Canvas(
     }
 
     drawImagesOnTop()
-  }, [drawSegmentWorld, drawImagesOnTop, loadImageElement])
+  }, [drawSegmentWorld, drawImagesOnTop])
+
+  const redrawAll = useCallback(async () => {
+    paintCanvas()
+
+    const pending = [...imagesRef.current.values()].filter((img) => !img.element && img.data)
+    if (pending.length === 0) return
+
+    await Promise.all(pending.map((img) => loadImageElement(img)))
+    paintCanvas()
+  }, [paintCanvas, loadImageElement])
+
+  useEffect(() => {
+    paintCanvasRef.current = paintCanvas
+  }, [paintCanvas])
 
   useEffect(() => {
     redrawAllRef.current = redrawAll
   }, [redrawAll])
 
-  const initCamera = useCallback(() => {
+  const fitCameraToCanvas = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
 
@@ -492,11 +510,14 @@ const Canvas = forwardRef(function Canvas(
       y: WORLD_HEIGHT / 2 - canvas.height / (2 * zoom),
       zoom,
     }
+  }, [])
 
-    redrawAllRef.current()
+  const initCamera = useCallback(() => {
+    fitCameraToCanvas()
+    paintCanvasRef.current()
     notifyCameraChange()
     forceRender((n) => n + 1)
-  }, [notifyCameraChange])
+  }, [fitCameraToCanvas, notifyCameraChange])
 
   const isNewIncognitoCreation = useCallback((event) => {
     if (!incognitoModeRef.current) return false
@@ -524,7 +545,7 @@ const Canvas = forwardRef(function Canvas(
     })
   }, [onClearApplied])
 
-  const persistAndSend = useCallback((event) => {
+  const persistAndSend = useCallback(async (event) => {
     if (event.type === 'BOARD_CLEAR') {
       if (incognitoModeRef.current) {
         incognitoEventsRef.current.push(event)
@@ -532,9 +553,9 @@ const Canvas = forwardRef(function Canvas(
         notifyIncognitoCanvasChange()
       } else {
         allEventsRef.current.push(event)
-        sendDraw(event)
+        await Promise.resolve(sendDraw(event))
       }
-      return
+      return true
     }
 
     if (event.type === 'REGION_CLEAR') {
@@ -543,11 +564,11 @@ const Canvas = forwardRef(function Canvas(
         notifyIncognitoCanvasChange()
       } else {
         allEventsRef.current.push(event)
-        sendDraw(event)
+        await Promise.resolve(sendDraw(event))
         incognitoEventsRef.current.push({ ...event })
         notifyIncognitoCanvasChange()
       }
-      return
+      return true
     }
 
     if (event.type === 'STROKE_START' || event.type === 'SHAPE_ADD' || event.type === 'IMAGE_ADD') {
@@ -558,10 +579,12 @@ const Canvas = forwardRef(function Canvas(
     const ref = isPrivate ? incognitoEventsRef : allEventsRef
     ref.current.push(event)
     if (!isPrivate) {
-      sendDraw(event)
-    } else {
-      notifyIncognitoCanvasChange()
+      const result = sendDraw(event)
+      return result instanceof Promise ? result : Promise.resolve(result)
     }
+
+    notifyIncognitoCanvasChange()
+    return true
   }, [sendDraw, markIncognitoEntity, isPrivateEvent, notifyIncognitoCanvasChange])
 
   const handleEvent = useCallback(async (event, { persist = true, layer = 'auto' } = {}) => {
@@ -583,17 +606,22 @@ const Canvas = forwardRef(function Canvas(
         const ref = isPrivateEvent(event) ? incognitoEventsRef : allEventsRef
         ref.current.push(event)
       }
-      await redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
     if (event.type === 'IMAGE_ADD') {
       if (persist) {
         const ref = isPrivateEvent(event) ? incognitoEventsRef : allEventsRef
-        ref.current.push(event)
+        const alreadyStored = ref.current.some(
+          (stored) => stored.type === 'IMAGE_ADD' && stored.imageId === event.imageId
+        )
+        if (!alreadyStored) {
+          ref.current.push(event)
+        }
       }
       await applyImageAdd(event)
-      redrawAllRef.current()
+      await redrawAllRef.current()
       return
     }
 
@@ -603,7 +631,7 @@ const Canvas = forwardRef(function Canvas(
         ref.current.push(event)
       }
       applyImageMove(event)
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
@@ -613,7 +641,7 @@ const Canvas = forwardRef(function Canvas(
         ref.current.push(event)
       }
       applyImageResize(event)
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
@@ -626,7 +654,7 @@ const Canvas = forwardRef(function Canvas(
         }
       }
       applyImageDelete(event)
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
@@ -794,12 +822,12 @@ const Canvas = forwardRef(function Canvas(
             orig: { ...shape },
             moved: false,
           }
-          redrawAllRef.current()
+          paintCanvasRef.current()
           return
         }
       }
       lockPendingShape()
-      redrawAllRef.current()
+      paintCanvasRef.current()
     }
 
     shapeDragRef.current = {
@@ -808,7 +836,7 @@ const Canvas = forwardRef(function Canvas(
       currentX: norm.x,
       currentY: norm.y,
     }
-    redrawAllRef.current()
+    paintCanvasRef.current()
   }, [worldToScreen, lockPendingShape])
 
   const handleShapeMouseMove = useCallback((norm) => {
@@ -822,7 +850,7 @@ const Canvas = forwardRef(function Canvas(
         shape.width = resizeDrag.orig.width
         shape.height = resizeDrag.orig.height
         resizeShapeFromCorner(shape, resizeDrag.corner, norm, resizeDrag.orig)
-        redrawAllRef.current()
+        paintCanvasRef.current()
       }
       return
     }
@@ -830,7 +858,7 @@ const Canvas = forwardRef(function Canvas(
     if (shapeDragRef.current) {
       shapeDragRef.current.currentX = norm.x
       shapeDragRef.current.currentY = norm.y
-      redrawAllRef.current()
+      paintCanvasRef.current()
     }
   }, [resizeShapeFromCorner])
 
@@ -852,7 +880,7 @@ const Canvas = forwardRef(function Canvas(
       }
 
       lockPendingShape()
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
@@ -881,7 +909,7 @@ const Canvas = forwardRef(function Canvas(
       pendingShapeRef.current = { shapeId: event.shapeId }
     }
 
-    redrawAllRef.current()
+    paintCanvasRef.current()
   }, [lockPendingShape, persistAndSend])
 
   useEffect(() => {
@@ -902,6 +930,10 @@ const Canvas = forwardRef(function Canvas(
 
       for (const event of snapshotEvents) {
         if (event.type === 'IMAGE_ADD') {
+          if (!event.data) {
+            console.warn('Snapshot image is missing image data', event.imageId)
+            continue
+          }
           await applyImageAdd(event)
         }
       }
@@ -917,16 +949,27 @@ const Canvas = forwardRef(function Canvas(
     if (!container || !canvas) return
 
     const resize = () => {
-      canvas.width = container.clientWidth
-      canvas.height = container.clientHeight
-      initCamera()
+      const width = container.clientWidth
+      const height = container.clientHeight
+      if (canvas.width === width && canvas.height === height) return
+
+      canvas.width = width
+      canvas.height = height
+
+      if (!cameraInitializedRef.current) {
+        fitCameraToCanvas()
+        cameraInitializedRef.current = true
+      }
+
+      paintCanvasRef.current()
+      notifyCameraChange()
     }
 
     resize()
     const observer = new ResizeObserver(resize)
     observer.observe(container)
     return () => observer.disconnect()
-  }, [initCamera])
+  }, [fitCameraToCanvas, notifyCameraChange])
 
   const getScreenCoords = (e) => {
     const canvas = canvasRef.current
@@ -1011,10 +1054,20 @@ const Canvas = forwardRef(function Canvas(
       data: dataUrl,
     }
 
+    if (event.data.length > MAX_IMAGE_DATA_URL_LENGTH) {
+      alert('Картинка слишком большая для сохранения на доске. Попробуйте изображение меньшего размера.')
+      return
+    }
+
+    const isPrivate = incognitoModeRef.current
+    const synced = await persistAndSend(event)
     await handleEvent(event, { persist: false })
-    persistAndSend(event)
     setSelection(event.imageId)
     onModeChange?.('select')
+
+    if (!isPrivate && synced === false) {
+      console.warn('Image was not saved to the server')
+    }
   }, [screenToWorld, handleEvent, persistAndSend, setSelection, onModeChange])
 
   const handlePaste = useCallback(async (e) => {
@@ -1064,7 +1117,7 @@ const Canvas = forwardRef(function Canvas(
     cam.zoom = Math.min(5, Math.max(0.02, cam.zoom * factor))
     cam.x = worldX - screen.x / cam.zoom
     cam.y = worldY - screen.y / cam.zoom
-    redrawAllRef.current()
+    paintCanvasRef.current()
     notifyCameraChange()
   }
 
@@ -1084,7 +1137,7 @@ const Canvas = forwardRef(function Canvas(
     cameraRef.current.x -= dx / cameraRef.current.zoom
     cameraRef.current.y -= dy / cameraRef.current.zoom
     lastPanPoint.current = { x: e.clientX, y: e.clientY }
-    redrawAllRef.current()
+    paintCanvasRef.current()
     notifyCameraChange()
   }
 
@@ -1108,7 +1161,7 @@ const Canvas = forwardRef(function Canvas(
         },
         moved: false,
       }
-      redrawAllRef.current()
+      paintCanvasRef.current()
     }
 
     const selectedId = selectedImageIdRef.current
@@ -1145,13 +1198,13 @@ const Canvas = forwardRef(function Canvas(
         offsetY: norm.y - img.y,
         moved: false,
       }
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
     clearSelection()
     dragRef.current = null
-    redrawAllRef.current()
+    paintCanvasRef.current()
   }
 
   const handleSelectMouseMove = (norm) => {
@@ -1165,7 +1218,7 @@ const Canvas = forwardRef(function Canvas(
       drag.moved = true
       img.x = norm.x - drag.offsetX
       img.y = norm.y - drag.offsetY
-      redrawAllRef.current()
+      paintCanvasRef.current()
       return
     }
 
@@ -1197,7 +1250,7 @@ const Canvas = forwardRef(function Canvas(
         img.imageHeight = origBottom - newY
       }
 
-      redrawAllRef.current()
+      paintCanvasRef.current()
     }
   }
 
@@ -1234,7 +1287,7 @@ const Canvas = forwardRef(function Canvas(
     }
 
     dragRef.current = null
-    redrawAllRef.current()
+    paintCanvasRef.current()
   }
 
   const releaseSelectPointerCapture = (pointerId) => {
@@ -1285,7 +1338,7 @@ const Canvas = forwardRef(function Canvas(
     const event = { type: 'IMAGE_DELETE', imageId }
     applyImageDelete(event)
     persistAndSend(event)
-    redrawAllRef.current()
+    paintCanvasRef.current()
     return true
   }, [applyImageDelete, persistAndSend])
 
@@ -1514,7 +1567,7 @@ const Canvas = forwardRef(function Canvas(
 
       lastPanPoint.current = center
       lastTouchDistance.current = dist
-      redrawAllRef.current()
+      paintCanvasRef.current()
       notifyCameraChange()
       return
     }
@@ -1584,7 +1637,7 @@ const Canvas = forwardRef(function Canvas(
     cam.zoom = Math.min(5, cam.zoom * 1.2)
     cam.x = wx - cx / cam.zoom
     cam.y = wy - cy / cam.zoom
-    redrawAllRef.current()
+    paintCanvasRef.current()
     notifyCameraChange()
   }
 
@@ -1598,7 +1651,7 @@ const Canvas = forwardRef(function Canvas(
     cam.zoom = Math.max(0.02, cam.zoom / 1.2)
     cam.x = wx - cx / cam.zoom
     cam.y = wy - cy / cam.zoom
-    redrawAllRef.current()
+    paintCanvasRef.current()
     notifyCameraChange()
   }
 

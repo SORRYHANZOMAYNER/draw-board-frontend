@@ -492,6 +492,22 @@ export default function BoardPage() {
   const { sendDraw, connected, connectionError } = useWebSocket(roomId, onMessage)
   const boardBlocked = accessDenied || Boolean(snapshotError)
 
+  const sendCanvasEvent = useCallback((event) => {
+    if (event.type === 'IMAGE_ADD') {
+      return apiJson(`/room/${roomId}/events`, {
+        method: 'POST',
+        body: JSON.stringify(event),
+      })
+        .then(() => true)
+        .catch((error) => {
+          console.error('Failed to save image event', error)
+          return false
+        })
+    }
+
+    return sendDraw(event)
+  }, [roomId, sendDraw])
+
   const scheduleIncognitoSave = useCallback(() => {
     if (!isTeacher || !roomId) return
 
@@ -1316,7 +1332,7 @@ export default function BoardPage() {
             strokeColor={strokeColor}
             incognitoMode={incognitoMode}
             onModeChange={handleModeChange}
-            sendDraw={sendDraw}
+            sendDraw={sendCanvasEvent}
             snapshotEvents={snapshotEvents}
             registerRemoteHandler={registerRemoteHandler}
             onCameraChange={setCamera}
