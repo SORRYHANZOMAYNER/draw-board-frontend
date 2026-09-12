@@ -19,17 +19,6 @@ export default function StickerNote({
   const textareaRef = useRef(null)
   const dragRef = useRef(null)
 
-  const zoom = camera.zoom > 0 ? camera.zoom : 0.01
-  const left = (sticker.x * WORLD_WIDTH - camera.x) * zoom
-  const top = (sticker.y * WORLD_HEIGHT - camera.y) * zoom
-  const width = sticker.width * WORLD_WIDTH * zoom
-  const height = sticker.height * WORLD_HEIGHT * zoom
-  const fontSize = Math.max(11, Math.min(20, width * 0.14))
-
-  if (!Number.isFinite(left) || !Number.isFinite(top) || width < 4 || height < 4) {
-    return null
-  }
-
   useEffect(() => {
     if (!autoFocus) return
     const timer = setTimeout(() => {
@@ -40,6 +29,17 @@ export default function StickerNote({
     }, 50)
     return () => clearTimeout(timer)
   }, [autoFocus])
+
+  const zoom = camera.zoom > 0 ? camera.zoom : 0.01
+  const left = (sticker.x * WORLD_WIDTH - camera.x) * zoom
+  const top = (sticker.y * WORLD_HEIGHT - camera.y) * zoom
+  const width = sticker.width * WORLD_WIDTH * zoom
+  const height = sticker.height * WORLD_HEIGHT * zoom
+  const fontSize = Math.max(11, Math.min(20, width * 0.14))
+
+  if (!Number.isFinite(left) || !Number.isFinite(top) || width < 4 || height < 4) {
+    return null
+  }
 
   const handleDragPointerDown = (e) => {
     if (!draggable) return

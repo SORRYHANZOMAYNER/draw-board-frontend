@@ -213,7 +213,7 @@ export function buildCanvasStateFromEvents(events) {
           y: event.y,
           imageWidth: event.imageWidth,
           imageHeight: event.imageHeight,
-          data: event.data ?? existing?.data,
+          data: event.data || existing?.data,
           element: null,
         })
         break

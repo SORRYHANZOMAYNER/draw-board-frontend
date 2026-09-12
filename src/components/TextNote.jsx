@@ -20,15 +20,7 @@ export default function TextNote({
   const dragRef = useRef(null)
 
   const zoom = camera.zoom > 0 ? camera.zoom : 0.01
-  const left = (item.x * WORLD_WIDTH - camera.x) * zoom
-  const top = (item.y * WORLD_HEIGHT - camera.y) * zoom
-  const boxWidth = (item.width ?? 0.14) * WORLD_WIDTH * zoom
-  const fontSize = (item.fontSize || 18) * zoom
   const isEditing = !item.locked && autoFocus
-
-  if (!Number.isFinite(left) || !Number.isFinite(top)) {
-    return null
-  }
 
   useEffect(() => {
     if (!autoFocus || !isEditing) return
@@ -40,6 +32,15 @@ export default function TextNote({
     }, 50)
     return () => clearTimeout(timer)
   }, [autoFocus, isEditing])
+
+  const left = (item.x * WORLD_WIDTH - camera.x) * zoom
+  const top = (item.y * WORLD_HEIGHT - camera.y) * zoom
+  const boxWidth = (item.width ?? 0.14) * WORLD_WIDTH * zoom
+  const fontSize = (item.fontSize || 18) * zoom
+
+  if (!Number.isFinite(left) || !Number.isFinite(top)) {
+    return null
+  }
 
   const handleDragPointerDown = (e) => {
     if (!draggable) return

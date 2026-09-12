@@ -137,6 +137,26 @@ function ShapeToolIcon({ type }) {
   }
 }
 
+function TemplateSaveIcon() {
+  return (
+    <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <rect x="4" y="4" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="4 3" />
+      <path fill="currentColor" d="M12 8v8M8 12h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function TemplateLibraryIcon() {
+  return (
+    <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M5 4h6l2 2h6a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1Zm2 8h10v2H7v-2Zm0 4h7v2H7v-2Z"
+      />
+    </svg>
+  )
+}
+
 function IncognitoIcon() {
   return (
     <svg className="toolbar-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -176,6 +196,7 @@ export default function Toolbar({
   isTeacher = false,
   incognitoMode = false,
   onIncognitoToggle,
+  onOpenTemplateLibrary,
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
@@ -337,16 +358,37 @@ export default function Toolbar({
         </button>
 
         {isTeacher && (
-          <button
-            type="button"
-            className={`toolbar-btn toolbar-btn--incognito${incognitoMode ? ' active' : ''}`}
-            title={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
-            aria-label={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
-            aria-pressed={incognitoMode}
-            onClick={onIncognitoToggle}
-          >
-            <IncognitoIcon />
-          </button>
+          <>
+            <button
+              type="button"
+              className={`toolbar-btn${mode === 'template-capture' ? ' active' : ''}`}
+              title="Сохранить область как шаблон"
+              aria-label="Сохранить область как шаблон"
+              aria-pressed={mode === 'template-capture'}
+              onClick={() => onModeChange?.('template-capture')}
+            >
+              <TemplateSaveIcon />
+            </button>
+            <button
+              type="button"
+              className="toolbar-btn"
+              title="Мои шаблоны"
+              aria-label="Мои шаблоны"
+              onClick={onOpenTemplateLibrary}
+            >
+              <TemplateLibraryIcon />
+            </button>
+            <button
+              type="button"
+              className={`toolbar-btn toolbar-btn--incognito${incognitoMode ? ' active' : ''}`}
+              title={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
+              aria-label={incognitoMode ? 'Выключить режим инкогнито' : 'Режим инкогнито'}
+              aria-pressed={incognitoMode}
+              onClick={onIncognitoToggle}
+            >
+              <IncognitoIcon />
+            </button>
+          </>
         )}
       </div>
 

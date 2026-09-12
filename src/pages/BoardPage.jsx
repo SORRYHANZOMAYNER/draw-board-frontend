@@ -39,6 +39,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
+import TemplateSaveDialog from '../components/TemplateSaveDialog.jsx'
+import TemplateLibraryPanel from '../components/TemplateLibraryPanel.jsx'
+import TemplateGroupOverlay, { clampTemplateRect } from '../components/TemplateGroupOverlay.jsx'
+import { extractTemplateForApi } from '../lib/templateExtract.js'
+import {
+  listTemplates,
+  createTemplate,
+  deleteTemplate,
+  insertTemplate,
+  buildCreateTemplateRequest,
+  readTemplateBounds,
+} from '../api/templates.js'
+import { MAX_TEMPLATES_PER_TEACHER, MAX_TEMPLATE_NAME_LENGTH } from '../constants/templates.js'
+import { WORLD_WIDTH, WORLD_HEIGHT, MIN_SHAPE_SIZE } from '../constants/board.js'
 import '../styles/BoardPage.css'
 
 function normalizeStickerFields(event, previous = null) {
@@ -201,8 +215,26 @@ export default function BoardPage() {
   const [incognitoStickers, setIncognitoStickers] = useState(() => new Map())
   const [incognitoTexts, setIncognitoTexts] = useState(() => new Map())
   const [clearDialogOpen, setClearDialogOpen] = useState(false)
+  const [templatesPanelOpen, setTemplatesPanelOpen] = useState(false)
+  const [templateList, setTemplateList] = useState([])
+  const [templateTotal, setTemplateTotal] = useState(0)
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [templatesError, setTemplatesError] = useState('')
+  const [templateSaveOpen, setTemplateSaveOpen] = useState(false)
+  const [templateSaveName, setTemplateSaveName] = useState('')
+  const [templateSaveDraft, setTemplateSaveDraft] = useState(null)
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [templateSaveError, setTemplateSaveError] = useState('')
+  const [templateFeedback, setTemplateFeedback] = useState('')
+  const [pendingInsertTemplate, setPendingInsertTemplate] = useState(null)
+  const [insertingTemplateId, setInsertingTemplateId] = useState(null)
+  const [activeTemplateInstance, setActiveTemplateInstance] = useState(null)
 
   const selectedImageIdRef = useRef(null)
+  const canvasAreaRef = useRef(null)
+  const activeTemplateInstanceRef = useRef(null)
+  const templateGroupDragRef = useRef(null)
+  const templateInstancesRef = useRef(new Map())
   const stickersRef = useRef(stickers)
   const textsRef = useRef(texts)
   const incognitoStickersRef = useRef(incognitoStickers)
@@ -236,6 +268,10 @@ export default function BoardPage() {
   useEffect(() => {
     incognitoModeRef.current = incognitoMode
   }, [incognitoMode])
+
+  useEffect(() => {
+    activeTemplateInstanceRef.current = activeTemplateInstance
+  }, [activeTemplateInstance])
 
   const displayStickers = useMemo(() => {
     if (!isTeacher) return stickers
@@ -441,7 +477,110 @@ export default function BoardPage() {
     })
   }, [])
 
+  const rememberTemplateMember = useCallback((event) => {
+    const instanceId = event.templateInstanceId
+    if (!instanceId) return
+
+    const current = templateInstancesRef.current.get(instanceId) ?? {
+      instanceId,
+      templateId: event.savedTemplateId,
+      rect: { x: 0, y: 0, width: 0.12, height: 0.08 },
+      originRect: null,
+      snapshots: [],
+      members: {
+        strokeRasterImageId: null,
+        shapeIds: [],
+        imageIds: [],
+        stickerIds: [],
+        textIds: [],
+      },
+    }
+
+    if (event.type === 'TEMPLATE_GROUP_CREATE') {
+      current.rect = {
+        x: event.x ?? current.rect.x,
+        y: event.y ?? current.rect.y,
+        width: event.width ?? current.rect.width,
+        height: event.height ?? current.rect.height,
+      }
+      current.originRect = { ...current.rect }
+      current.templateId = event.savedTemplateId ?? current.templateId
+    }
+
+    if (event.type === 'IMAGE_ADD' && event.imageId) {
+      current.snapshots.push({
+        kind: 'image',
+        imageId: event.imageId,
+        x: event.x,
+        y: event.y,
+        imageWidth: event.imageWidth,
+        imageHeight: event.imageHeight,
+      })
+    }
+    if (event.type === 'SHAPE_ADD' && event.shapeId) {
+      current.snapshots.push({
+        kind: 'shape',
+        shapeId: event.shapeId,
+        x: event.x,
+        y: event.y,
+        width: event.width,
+        height: event.height,
+      })
+    }
+    if (event.type === 'STICKER_ADD' && event.stickerId) {
+      current.snapshots.push({
+        kind: 'sticker',
+        stickerId: event.stickerId,
+        x: event.x,
+        y: event.y,
+        width: event.width,
+        height: event.height,
+        text: event.text,
+        color: event.color,
+      })
+    }
+    if (event.type === 'TEXT_ADD' && event.textId) {
+      current.snapshots.push({
+        kind: 'text',
+        textId: event.textId,
+        x: event.x,
+        y: event.y,
+        width: event.width,
+        text: event.text,
+        color: event.color,
+        fontSize: event.fontSize,
+        locked: event.locked,
+      })
+    }
+    if (event.shapeId && !current.members.shapeIds.includes(event.shapeId)) {
+      current.members.shapeIds.push(event.shapeId)
+    }
+    if (event.imageId && !current.members.imageIds.includes(event.imageId)) {
+      current.members.imageIds.push(event.imageId)
+    }
+    if (event.stickerId && !current.members.stickerIds.includes(event.stickerId)) {
+      current.members.stickerIds.push(event.stickerId)
+    }
+    if (event.textId && !current.members.textIds.includes(event.textId)) {
+      current.members.textIds.push(event.textId)
+    }
+
+    templateInstancesRef.current.set(instanceId, current)
+    return current
+  }, [])
+
   const onMessage = useCallback((event) => {
+    if (event.templateInstanceId || event.type?.startsWith('TEMPLATE_')) {
+      const instance = rememberTemplateMember(event)
+      if (event.type === 'TEMPLATE_GROUP_CREATE' && instance) {
+        setActiveTemplateInstance({ ...instance, name: 'Шаблон' })
+      }
+    }
+
+    if (event.type?.startsWith('TEMPLATE_')) {
+      return
+    }
+
     if (event.type?.startsWith('STICKER_')) {
       applyStickerEvent(event)
       return
@@ -481,7 +620,7 @@ export default function BoardPage() {
     } else {
       eventQueueRef.current.push(event)
     }
-  }, [applyStickerEvent, applyTextEvent])
+  }, [applyStickerEvent, applyTextEvent, rememberTemplateMember])
 
   const registerRemoteHandler = useCallback((handler) => {
     remoteHandlerRef.current = handler
@@ -907,78 +1046,6 @@ export default function BoardPage() {
     deleteSelectedImage()
   }, [contextMenu, deleteSticker, deleteText, deleteSelectedImage])
 
-  useEffect(() => {
-    const onKeyDown = (e) => {
-      if (e.key !== 'Delete') return
-
-      const tag = e.target?.tagName
-      if (tag === 'TEXTAREA' || tag === 'INPUT') return
-
-      e.preventDefault()
-      handleDeleteSelected()
-    }
-
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleDeleteSelected])
-
-  const handleBoardClick = useCallback((norm) => {
-    if (loading) return
-
-    if (mode === 'sticker') {
-      const stickerId = crypto.randomUUID()
-      const color = STICKER_COLORS[stickersRef.current.size % STICKER_COLORS.length]
-      const event = {
-        type: 'STICKER_ADD',
-        stickerId,
-        x: norm.x - DEFAULT_STICKER_WIDTH / 2,
-        y: norm.y - DEFAULT_STICKER_HEIGHT / 2,
-        width: DEFAULT_STICKER_WIDTH,
-        height: DEFAULT_STICKER_HEIGHT,
-        text: '',
-        color,
-      }
-
-      commitStickerEvent(event)
-      setSelectedStickerId(stickerId)
-      setFocusStickerId(stickerId)
-      setSelectedTextId(null)
-      setFocusTextId(null)
-      setMode('select')
-      return
-    }
-
-    if (mode === 'text') {
-      const zoom = camera.zoom > 0 ? camera.zoom : 0.01
-      const textId = crypto.randomUUID()
-      const event = {
-        type: 'TEXT_ADD',
-        textId,
-        x: norm.x,
-        y: norm.y,
-        width: DEFAULT_TEXT_WIDTH,
-        text: '',
-        color: strokeColor,
-        fontSize: textFontSizeForZoom(DEFAULT_TEXT_FONT_SIZE, zoom),
-        locked: false,
-      }
-
-      commitTextEvent(event)
-      setSelectedTextId(textId)
-      setFocusTextId(textId)
-      setSelectedStickerId(null)
-      setFocusStickerId(null)
-      canvasRef.current?.clearSelection()
-    }
-  }, [
-    loading,
-    mode,
-    strokeColor,
-    camera.zoom,
-    commitStickerEvent,
-    commitTextEvent,
-  ])
-
   const updateStickerText = useCallback((stickerId, text) => {
     const isIncognito = incognitoStickerIdsRef.current.has(stickerId)
     const setter = isIncognito ? setIncognitoStickers : setStickers
@@ -1183,16 +1250,471 @@ export default function BoardPage() {
     e.target.value = ''
   }
 
+  const refreshTemplates = useCallback(async () => {
+    if (!isTeacher) return
+    setTemplatesLoading(true)
+    setTemplatesError('')
+    try {
+      const data = await listTemplates()
+      setTemplateList(data.items)
+      setTemplateTotal(data.total)
+    } catch (err) {
+      setTemplatesError(err.message || 'Не удалось загрузить шаблоны')
+    } finally {
+      setTemplatesLoading(false)
+    }
+  }, [isTeacher])
+
+  useEffect(() => {
+    if (isTeacher) {
+      refreshTemplates()
+    }
+  }, [isTeacher, refreshTemplates])
+
+  const getNormFromClient = useCallback((clientX, clientY) => {
+    const el = canvasAreaRef.current
+    if (!el) return null
+    const bounds = el.getBoundingClientRect()
+    const zoom = camera.zoom > 0 ? camera.zoom : 0.01
+    const sx = clientX - bounds.left
+    const sy = clientY - bounds.top
+    return {
+      x: (camera.x + sx / zoom) / WORLD_WIDTH,
+      y: (camera.y + sy / zoom) / WORLD_HEIGHT,
+    }
+  }, [camera])
+
+  const syncTemplateInstanceToBoard = useCallback(async (instance) => {
+    const stored = templateInstancesRef.current.get(instance.instanceId) ?? instance
+    const origin = stored.originRect
+    if (!origin || origin.width <= 0 || origin.height <= 0) return
+
+    const scaleX = instance.rect.width / origin.width
+    const scaleY = instance.rect.height / origin.height
+    const canvasEvents = []
+
+    sendDraw({
+      type: 'TEMPLATE_GROUP_TRANSLATE',
+      templateInstanceId: instance.instanceId,
+      savedTemplateId: instance.templateId,
+      x: instance.rect.x,
+      y: instance.rect.y,
+      width: instance.rect.width,
+      height: instance.rect.height,
+    })
+
+    for (const snap of stored.snapshots ?? []) {
+      const x = instance.rect.x + (snap.x - origin.x) * scaleX
+      const y = instance.rect.y + (snap.y - origin.y) * scaleY
+      if (snap.kind === 'image') {
+        canvasEvents.push({
+          type: 'IMAGE_RESIZE',
+          imageId: snap.imageId,
+          x,
+          y,
+          imageWidth: snap.imageWidth * scaleX,
+          imageHeight: snap.imageHeight * scaleY,
+        })
+      }
+      if (snap.kind === 'shape') {
+        canvasEvents.push({
+          type: 'SHAPE_RESIZE',
+          shapeId: snap.shapeId,
+          x,
+          y,
+          width: snap.width * scaleX,
+          height: snap.height * scaleY,
+        })
+      }
+      if (snap.kind === 'sticker') {
+        commitStickerEvent({
+          type: 'STICKER_ADD',
+          stickerId: snap.stickerId,
+          x,
+          y,
+          width: snap.width * scaleX,
+          height: snap.height * scaleY,
+          text: snap.text,
+          color: snap.color,
+        })
+      }
+      if (snap.kind === 'text') {
+        commitTextEvent({
+          type: 'TEXT_ADD',
+          textId: snap.textId,
+          x,
+          y,
+          width: snap.width * scaleX,
+          text: snap.text,
+          color: snap.color,
+          fontSize: snap.fontSize * scaleY,
+          locked: snap.locked,
+        })
+      }
+    }
+
+    if (canvasEvents.length) {
+      await canvasRef.current?.publishPublicEvents?.(canvasEvents)
+    }
+  }, [commitStickerEvent, commitTextEvent, sendDraw])
+
+  const handleTemplateCaptureComplete = useCallback((rect) => {
+    if (!isTeacher) return
+    setMode('select')
+    const boardEvents = canvasRef.current?.getPublicCanvasEvents?.() ?? []
+    const draft = extractTemplateForApi(
+      boardEvents,
+      stickersRef.current,
+      textsRef.current,
+      rect
+    )
+    if (draft.isEmpty) {
+      setTemplateFeedback('В выделении нет объектов для сохранения')
+      return
+    }
+    setTemplateSaveDraft(draft)
+    setTemplateSaveName('')
+    setTemplateSaveError('')
+    setTemplateSaveOpen(true)
+  }, [isTeacher])
+
+  const closeTemplateSaveDialog = useCallback(() => {
+    if (templateSaving) return
+    setTemplateSaveOpen(false)
+    setTemplateSaveDraft(null)
+    setTemplateSaveError('')
+  }, [templateSaving])
+
+  const confirmTemplateSave = useCallback(async () => {
+    const name = templateSaveName.trim()
+    if (!name || !templateSaveDraft) return
+    if (templateTotal >= MAX_TEMPLATES_PER_TEACHER) {
+      setTemplateSaveError(`Достигнут лимит ${MAX_TEMPLATES_PER_TEACHER} шаблонов`)
+      return
+    }
+
+    setTemplateSaving(true)
+    setTemplateSaveError('')
+    try {
+      const body = buildCreateTemplateRequest(
+        name.slice(0, MAX_TEMPLATE_NAME_LENGTH),
+        templateSaveDraft
+      )
+      const created = await createTemplate(body)
+      const listItem = {
+        id: created.id,
+        name: created.name,
+        bounds: created.content?.bounds ?? templateSaveDraft.bounds,
+        createdAt: created.createdAt,
+        updatedAt: created.updatedAt,
+        hasPreview: Boolean(created.previewData),
+      }
+      setTemplateList((prev) => {
+        if (prev.some((item) => item.id === listItem.id)) return prev
+        return [listItem, ...prev]
+      })
+      setTemplateTotal((prev) => prev + 1)
+      closeTemplateSaveDialog()
+      setTemplateFeedback('Шаблон сохранён')
+      await refreshTemplates()
+    } catch (err) {
+      setTemplateSaveError(err.message || 'Не удалось сохранить шаблон')
+    } finally {
+      setTemplateSaving(false)
+    }
+  }, [
+    templateSaveName,
+    templateSaveDraft,
+    templateTotal,
+    closeTemplateSaveDialog,
+    refreshTemplates,
+  ])
+
+  const insertTemplateAt = useCallback(async (templateMeta, norm) => {
+    if (!connected) {
+      setTemplateFeedback('Дождитесь подключения к доске перед вставкой')
+      return
+    }
+
+    setInsertingTemplateId(templateMeta.id)
+    try {
+      const bounds = readTemplateBounds(templateMeta)
+      const origin = {
+        x: norm.x - bounds.width / 2,
+        y: norm.y - bounds.height / 2,
+      }
+      const response = await insertTemplate(roomId, templateMeta.id, {
+        x: origin.x,
+        y: origin.y,
+        scale: 1,
+      })
+      const instance = response?.templateInstanceId
+        ? templateInstancesRef.current.get(response.templateInstanceId)
+        : null
+      if (instance) {
+        setActiveTemplateInstance({
+          ...instance,
+          name: templateMeta.name || 'Шаблон',
+        })
+      }
+      setPendingInsertTemplate(null)
+      setMode('select')
+      setTemplatesPanelOpen(false)
+      setTemplateFeedback('Шаблон вставлен. Перетащите рамку, чтобы переместить или изменить размер.')
+    } catch (err) {
+      setTemplateFeedback(err.message || 'Не удалось вставить шаблон')
+    } finally {
+      setInsertingTemplateId(null)
+    }
+  }, [connected, roomId])
+
+  const startTemplateInsert = useCallback((item) => {
+    setPendingInsertTemplate(item)
+    setMode('template-place')
+    setActiveTemplateInstance(null)
+    setTemplateFeedback('Нажмите на доску, чтобы вставить шаблон')
+  }, [])
+
+  const handleBoardClick = useCallback((norm) => {
+    if (loading) return
+
+    if (mode === 'template-place' && pendingInsertTemplate) {
+      insertTemplateAt(pendingInsertTemplate, norm)
+      return
+    }
+
+    if (mode === 'sticker') {
+      const stickerId = crypto.randomUUID()
+      const color = STICKER_COLORS[stickersRef.current.size % STICKER_COLORS.length]
+      const event = {
+        type: 'STICKER_ADD',
+        stickerId,
+        x: norm.x - DEFAULT_STICKER_WIDTH / 2,
+        y: norm.y - DEFAULT_STICKER_HEIGHT / 2,
+        width: DEFAULT_STICKER_WIDTH,
+        height: DEFAULT_STICKER_HEIGHT,
+        text: '',
+        color,
+      }
+
+      commitStickerEvent(event)
+      setSelectedStickerId(stickerId)
+      setFocusStickerId(stickerId)
+      setSelectedTextId(null)
+      setFocusTextId(null)
+      setMode('select')
+      return
+    }
+
+    if (mode === 'text') {
+      const zoom = camera.zoom > 0 ? camera.zoom : 0.01
+      const textId = crypto.randomUUID()
+      const event = {
+        type: 'TEXT_ADD',
+        textId,
+        x: norm.x,
+        y: norm.y,
+        width: DEFAULT_TEXT_WIDTH,
+        text: '',
+        color: strokeColor,
+        fontSize: textFontSizeForZoom(DEFAULT_TEXT_FONT_SIZE, zoom),
+        locked: false,
+      }
+
+      commitTextEvent(event)
+      setSelectedTextId(textId)
+      setFocusTextId(textId)
+      setSelectedStickerId(null)
+      setFocusStickerId(null)
+      canvasRef.current?.clearSelection()
+    }
+  }, [
+    loading,
+    mode,
+    pendingInsertTemplate,
+    insertTemplateAt,
+    strokeColor,
+    camera.zoom,
+    commitStickerEvent,
+    commitTextEvent,
+  ])
+
+  const handleDeleteTemplate = useCallback(async (item) => {
+    if (!item?.id) return
+    if (!window.confirm(`Удалить шаблон «${item.name || 'Без названия'}»?`)) return
+    try {
+      await deleteTemplate(item.id)
+      await refreshTemplates()
+      setTemplateFeedback('Шаблон удалён')
+    } catch (err) {
+      setTemplateFeedback(err.message || 'Не удалось удалить шаблон')
+    }
+  }, [refreshTemplates])
+
+  const resizeTemplateRectFromCorner = useCallback((orig, corner, norm) => {
+    const origRight = orig.x + orig.width
+    const origBottom = orig.y + orig.height
+
+    if (corner === 'br') {
+      return clampTemplateRect({
+        x: orig.x,
+        y: orig.y,
+        width: Math.max(MIN_SHAPE_SIZE, norm.x - orig.x),
+        height: Math.max(MIN_SHAPE_SIZE, norm.y - orig.y),
+      })
+    }
+    if (corner === 'bl') {
+      const newX = Math.min(norm.x, origRight - MIN_SHAPE_SIZE)
+      return clampTemplateRect({
+        x: newX,
+        y: orig.y,
+        width: origRight - newX,
+        height: Math.max(MIN_SHAPE_SIZE, norm.y - orig.y),
+      })
+    }
+    if (corner === 'tr') {
+      const newY = Math.min(norm.y, origBottom - MIN_SHAPE_SIZE)
+      return clampTemplateRect({
+        x: orig.x,
+        y: newY,
+        width: Math.max(MIN_SHAPE_SIZE, norm.x - orig.x),
+        height: origBottom - newY,
+      })
+    }
+    const newX = Math.min(norm.x, origRight - MIN_SHAPE_SIZE)
+    const newY = Math.min(norm.y, origBottom - MIN_SHAPE_SIZE)
+    return clampTemplateRect({
+      x: newX,
+      y: newY,
+      width: origRight - newX,
+      height: origBottom - newY,
+    })
+  }, [])
+
+  const handleTemplateGroupMoveStart = useCallback((e) => {
+    const norm = getNormFromClient(e.clientX, e.clientY)
+    const inst = activeTemplateInstanceRef.current
+    if (!norm || !inst) return
+    templateGroupDragRef.current = {
+      kind: 'move',
+      pointerId: e.pointerId,
+      startNorm: norm,
+      origRect: { ...inst.rect },
+    }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }, [getNormFromClient])
+
+  const handleTemplateGroupMove = useCallback((e) => {
+    const drag = templateGroupDragRef.current
+    if (!drag || drag.kind !== 'move' || drag.pointerId !== e.pointerId) return
+    const norm = getNormFromClient(e.clientX, e.clientY)
+    if (!norm) return
+    const dx = norm.x - drag.startNorm.x
+    const dy = norm.y - drag.startNorm.y
+    setActiveTemplateInstance((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        rect: clampTemplateRect({
+          ...drag.origRect,
+          x: drag.origRect.x + dx,
+          y: drag.origRect.y + dy,
+        }),
+      }
+    })
+  }, [getNormFromClient])
+
+  const handleTemplateGroupMoveEnd = useCallback(async (e) => {
+    const drag = templateGroupDragRef.current
+    if (!drag || drag.kind !== 'move' || drag.pointerId !== e.pointerId) return
+    templateGroupDragRef.current = null
+    const inst = activeTemplateInstanceRef.current
+    if (inst) {
+      await syncTemplateInstanceToBoard(inst)
+    }
+  }, [syncTemplateInstanceToBoard])
+
+  const handleTemplateGroupResizeStart = useCallback((corner, e) => {
+    const inst = activeTemplateInstanceRef.current
+    if (!inst) return
+    templateGroupDragRef.current = {
+      kind: 'resize',
+      corner,
+      pointerId: e.pointerId,
+      origRect: { ...inst.rect },
+    }
+    e.currentTarget.setPointerCapture?.(e.pointerId)
+  }, [])
+
+  const handleTemplateGroupResize = useCallback((e) => {
+    const drag = templateGroupDragRef.current
+    if (!drag || drag.kind !== 'resize' || drag.pointerId !== e.pointerId) return
+    const norm = getNormFromClient(e.clientX, e.clientY)
+    if (!norm) return
+    setActiveTemplateInstance((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        rect: resizeTemplateRectFromCorner(drag.origRect, drag.corner, norm),
+      }
+    })
+  }, [getNormFromClient, resizeTemplateRectFromCorner])
+
+  const handleTemplateGroupResizeEnd = useCallback(async (e) => {
+    const drag = templateGroupDragRef.current
+    if (!drag || drag.kind !== 'resize' || drag.pointerId !== e.pointerId) return
+    templateGroupDragRef.current = null
+    const inst = activeTemplateInstanceRef.current
+    if (inst) {
+      await syncTemplateInstanceToBoard(inst)
+    }
+  }, [syncTemplateInstanceToBoard])
+
   const handleModeChange = (nextMode) => {
     setMode(nextMode)
     closeContextMenu()
+    if (nextMode === 'template-capture') {
+      canvasRef.current?.clearSelection()
+      setActiveTemplateInstance(null)
+    }
     if (nextMode !== 'select') {
       setSelectedStickerId(null)
       setFocusStickerId(null)
       setSelectedTextId(null)
       setFocusTextId(null)
     }
+    if (nextMode !== 'template-place') {
+      setPendingInsertTemplate(null)
+    }
   }
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      const tag = e.target?.tagName
+      if (tag === 'TEXTAREA' || tag === 'INPUT') return
+
+      if (e.key === 'Escape') {
+        if (mode === 'template-capture' || mode === 'template-place') {
+          setMode('select')
+          setPendingInsertTemplate(null)
+        }
+        if (templateSaveOpen && !templateSaving) {
+          setTemplateSaveOpen(false)
+          setTemplateSaveDraft(null)
+          setTemplateSaveError('')
+        }
+        return
+      }
+
+      if (e.key !== 'Delete') return
+
+      e.preventDefault()
+      handleDeleteSelected()
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [handleDeleteSelected, mode, templateSaveOpen, templateSaving])
 
   return (
     <div className="board-page" onClick={closeContextMenu}>
@@ -1290,6 +1812,11 @@ export default function BoardPage() {
               <AlertDescription>Подождите подключения перед рисованием</AlertDescription>
             </Alert>
           )}
+          {templateFeedback && (
+            <Alert>
+              <AlertDescription>{templateFeedback}</AlertDescription>
+            </Alert>
+          )}
         </div>
       </header>
 
@@ -1317,12 +1844,34 @@ export default function BoardPage() {
           onResetView={() => canvasRef.current?.resetView()}
           onImageUpload={handleImageUpload}
           onClearAllRequest={handleClearAllRequest}
+          onOpenTemplateLibrary={() => {
+            setTemplatesPanelOpen(true)
+            refreshTemplates()
+          }}
         />
 
-        <div className="board-canvas-area">
+        <div
+          className="board-canvas-area"
+          ref={canvasAreaRef}
+          onClick={(e) => {
+            if (!e.target.closest('.template-group-overlay')) {
+              setActiveTemplateInstance(null)
+            }
+          }}
+        >
           {incognitoMode && isTeacher && (
             <div className="board-incognito-banner" role="status">
               Режим инкогнито — видно только вам
+            </div>
+          )}
+          {mode === 'template-place' && (
+            <div className="board-incognito-banner" role="status">
+              Нажмите на доску, чтобы вставить шаблон (Esc — отмена)
+            </div>
+          )}
+          {mode === 'template-capture' && (
+            <div className="board-incognito-banner" role="status">
+              Выделите область для шаблона (Esc — отмена)
             </div>
           )}
           <Canvas
@@ -1341,13 +1890,27 @@ export default function BoardPage() {
             onImageContextMenu={handleImageContextMenu}
             onClearApplied={handleClearApplied}
             onIncognitoCanvasChange={handleIncognitoCanvasChange}
+            onTemplateCaptureComplete={handleTemplateCaptureComplete}
           />
+
+          {isTeacher && activeTemplateInstance && (
+            <TemplateGroupOverlay
+              instance={activeTemplateInstance}
+              camera={camera}
+              onMoveStart={handleTemplateGroupMoveStart}
+              onMove={handleTemplateGroupMove}
+              onMoveEnd={handleTemplateGroupMoveEnd}
+              onResizeStart={handleTemplateGroupResizeStart}
+              onResize={handleTemplateGroupResize}
+              onResizeEnd={handleTemplateGroupResizeEnd}
+            />
+          )}
 
           <StickerLayer
             stickers={displayStickers}
             camera={camera}
             mode={mode}
-            ignorePointer={mode === 'region-clear'}
+            ignorePointer={mode === 'region-clear' || mode === 'template-capture' || mode === 'template-place'}
             selectedStickerId={selectedStickerId}
             focusStickerId={focusStickerId}
             onSelectSticker={handleSelectSticker}
@@ -1363,7 +1926,7 @@ export default function BoardPage() {
             texts={displayTexts}
             camera={camera}
             mode={mode}
-            ignorePointer={mode === 'region-clear'}
+            ignorePointer={mode === 'region-clear' || mode === 'template-capture' || mode === 'template-place'}
             selectedTextId={selectedTextId}
             focusTextId={focusTextId}
             onSelectText={handleSelectText}
@@ -1374,9 +1937,35 @@ export default function BoardPage() {
             onTextMoveEnd={handleTextMoveEnd}
             onTextContextMenu={handleTextContextMenu}
           />
+
+          {isTeacher && (
+            <TemplateLibraryPanel
+              open={templatesPanelOpen}
+              items={templateList}
+              total={templateTotal}
+              loading={templatesLoading}
+              error={templatesError}
+              insertingId={insertingTemplateId}
+              onClose={() => setTemplatesPanelOpen(false)}
+              onRefresh={refreshTemplates}
+              onInsert={startTemplateInsert}
+              onDelete={handleDeleteTemplate}
+            />
+          )}
         </div>
       </div>
       )}
+
+      <TemplateSaveDialog
+        open={templateSaveOpen}
+        name={templateSaveName}
+        onNameChange={setTemplateSaveName}
+        templateCount={templateTotal}
+        saving={templateSaving}
+        error={templateSaveError}
+        onCancel={closeTemplateSaveDialog}
+        onSave={confirmTemplateSave}
+      />
 
       {contextMenu && (
         <ContextMenu

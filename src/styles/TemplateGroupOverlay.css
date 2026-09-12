@@ -1,0 +1,65 @@
+.template-group-overlay {
+  position: absolute;
+  z-index: 25;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 2px solid #059669;
+  background: rgba(5, 150, 105, 0.08);
+}
+
+.template-group-overlay-body {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+  cursor: move;
+}
+
+.template-group-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  pointer-events: auto;
+  border: 2px solid #fff;
+  border-radius: 2px;
+  background: #059669;
+  cursor: nwse-resize;
+}
+
+.template-group-handle--tl {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.template-group-handle--tr {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.template-group-handle--bl {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.template-group-handle--br {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
+.template-group-label {
+  position: absolute;
+  top: -22px;
+  left: 0;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  border-radius: 4px;
+  background: #059669;
+}

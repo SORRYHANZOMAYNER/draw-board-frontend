@@ -60,6 +60,7 @@ const Canvas = forwardRef(function Canvas(
     incognitoMode = false,
     onClearApplied,
     onIncognitoCanvasChange,
+    onTemplateCaptureComplete,
   },
   ref
 ) {
@@ -95,9 +96,12 @@ const Canvas = forwardRef(function Canvas(
   const shapeResizeDragRef = useRef(null)
   const regionClearDragRef = useRef(null)
   const regionClearPointerIdRef = useRef(null)
+  const templateCaptureDragRef = useRef(null)
+  const templateCapturePointerIdRef = useRef(null)
   const selectPointerIdRef = useRef(null)
 
   const [regionClearPreview, setRegionClearPreview] = useState(null)
+  const [templateCapturePreview, setTemplateCapturePreview] = useState(null)
   const [, forceRender] = useState(0)
 
   const notifyCameraChange = useCallback(() => {
@@ -181,6 +185,16 @@ const Canvas = forwardRef(function Canvas(
       regionClearDragRef.current = null
       regionClearPointerIdRef.current = null
       setRegionClearPreview(null)
+    }
+    if (mode !== 'template-capture') {
+      templateCaptureDragRef.current = null
+      templateCapturePointerIdRef.current = null
+      setTemplateCapturePreview(null)
+    }
+    if (mode === 'template-capture') {
+      clearSelection()
+      lockPendingShape()
+      shapeDragRef.current = null
     }
   }, [mode, clearSelection, lockPendingShape])
 
@@ -334,9 +348,9 @@ const Canvas = forwardRef(function Canvas(
     }
   }, [mode, worldToScreen])
 
-  const updateRegionClearPreview = useCallback((drag) => {
+  const updateRectDragPreview = useCallback((drag, setPreview) => {
     if (!drag) {
-      setRegionClearPreview(null)
+      setPreview(null)
       return
     }
 
@@ -344,8 +358,16 @@ const Canvas = forwardRef(function Canvas(
     const tl = worldToScreen(rect.x * WORLD_WIDTH, rect.y * WORLD_HEIGHT)
     const w = rect.width * WORLD_WIDTH * cameraRef.current.zoom
     const h = rect.height * WORLD_HEIGHT * cameraRef.current.zoom
-    setRegionClearPreview({ left: tl.x, top: tl.y, width: w, height: h })
+    setPreview({ left: tl.x, top: tl.y, width: w, height: h })
   }, [worldToScreen])
+
+  const updateRegionClearPreview = useCallback((drag) => {
+    updateRectDragPreview(drag, setRegionClearPreview)
+  }, [updateRectDragPreview])
+
+  const updateTemplateCapturePreview = useCallback((drag) => {
+    updateRectDragPreview(drag, setTemplateCapturePreview)
+  }, [updateRectDragPreview])
 
   const drawImagesOnTop = useCallback(() => {
     drawImages()
@@ -387,7 +409,7 @@ const Canvas = forwardRef(function Canvas(
       y: event.y,
       imageWidth: event.imageWidth,
       imageHeight: event.imageHeight,
-      data: event.data ?? existing?.data,
+      data: event.data || existing?.data || null,
       element: existing?.element ?? null,
     }
     imagesRef.current.set(event.imageId, imgObj)
@@ -588,6 +610,10 @@ const Canvas = forwardRef(function Canvas(
   }, [sendDraw, markIncognitoEntity, isPrivateEvent, notifyIncognitoCanvasChange])
 
   const handleEvent = useCallback(async (event, { persist = true, layer = 'auto' } = {}) => {
+    if (event.type?.startsWith('TEMPLATE_')) {
+      return
+    }
+
     const eventsRef = resolveEventsRef(layer)
 
     if (event.type === 'BOARD_CLEAR' || event.type === 'REGION_CLEAR') {
@@ -743,6 +769,81 @@ const Canvas = forwardRef(function Canvas(
     regionClearPointerIdRef.current = null
     handleRegionClearMouseUp()
   }, [handleRegionClearMouseUp])
+
+  const handleTemplateCaptureMouseUp = useCallback(() => {
+    const drag = templateCaptureDragRef.current
+    templateCaptureDragRef.current = null
+    setTemplateCapturePreview(null)
+    if (!drag) return
+
+    const rect = normalizeRect(drag.startX, drag.startY, drag.currentX, drag.currentY)
+    if (rect.width < MIN_SHAPE_SIZE || rect.height < MIN_SHAPE_SIZE) {
+      return
+    }
+
+    onTemplateCaptureComplete?.(rect)
+  }, [onTemplateCaptureComplete])
+
+  const handleTemplateCapturePointerDown = useCallback((e) => {
+    if (mode !== 'template-capture' || e.button !== 0) return
+
+    e.preventDefault()
+    e.stopPropagation()
+
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    canvas.setPointerCapture(e.pointerId)
+    templateCapturePointerIdRef.current = e.pointerId
+
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    templateCaptureDragRef.current = {
+      startX: norm.x,
+      startY: norm.y,
+      currentX: norm.x,
+      currentY: norm.y,
+    }
+    updateTemplateCapturePreview(templateCaptureDragRef.current)
+  }, [mode, updateTemplateCapturePreview])
+
+  const handleTemplateCapturePointerMove = useCallback((e) => {
+    if (templateCapturePointerIdRef.current !== e.pointerId || !templateCaptureDragRef.current) return
+
+    e.preventDefault()
+    const screen = getScreenCoords(e)
+    const norm = getWorldNormalized(screen)
+    templateCaptureDragRef.current.currentX = norm.x
+    templateCaptureDragRef.current.currentY = norm.y
+    updateTemplateCapturePreview(templateCaptureDragRef.current)
+  }, [updateTemplateCapturePreview])
+
+  const handleTemplateCapturePointerUp = useCallback((e) => {
+    if (templateCapturePointerIdRef.current !== e.pointerId) return
+
+    e.preventDefault()
+    const canvas = canvasRef.current
+    if (canvas?.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId)
+    }
+    templateCapturePointerIdRef.current = null
+    handleTemplateCaptureMouseUp()
+  }, [handleTemplateCaptureMouseUp])
+
+  const getPublicCanvasEvents = useCallback(() => [...allEventsRef.current], [])
+
+  const publishPublicEvents = useCallback(async (events) => {
+    for (const event of events) {
+      if (event.type === 'IMAGE_ADD') {
+        await persistAndSend(event)
+        await handleEvent(event, { persist: false, layer: 'public' })
+      } else {
+        await handleEvent(event, { persist: false, layer: 'public' })
+        await persistAndSend(event)
+      }
+    }
+    await redrawAllRef.current()
+  }, [handleEvent, persistAndSend])
 
   const clearBoard = useCallback(async () => {
     const event = { type: 'BOARD_CLEAR' }
@@ -1363,7 +1464,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
     if (e.button !== 0) return
-    if (mode === 'region-clear') return
+    if (mode === 'region-clear' || mode === 'template-capture') return
     e.preventDefault()
 
     const screen = getScreenCoords(e)
@@ -1373,7 +1474,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
-    if (mode === 'sticker' || mode === 'text') {
+    if (mode === 'sticker' || mode === 'text' || mode === 'template-place') {
       onBoardClick?.(norm)
       return
     }
@@ -1418,7 +1519,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
-    if (mode === 'region-clear') {
+    if (mode === 'region-clear' || mode === 'template-capture') {
       return
     }
 
@@ -1442,21 +1543,24 @@ const Canvas = forwardRef(function Canvas(
 
   const handleCanvasPointerDown = (e) => {
     handleRegionClearPointerDown(e)
+    handleTemplateCapturePointerDown(e)
     handleSelectPointerDown(e)
   }
 
   const handleCanvasPointerMove = (e) => {
     handleRegionClearPointerMove(e)
+    handleTemplateCapturePointerMove(e)
     handleSelectPointerMove(e)
   }
 
   const handleCanvasPointerUp = (e) => {
     handleRegionClearPointerUp(e)
+    handleTemplateCapturePointerUp(e)
     handleSelectPointerUp(e)
   }
 
   const handleMouseUp = (e) => {
-    if (regionClearPointerIdRef.current != null) return
+    if (regionClearPointerIdRef.current != null || templateCapturePointerIdRef.current != null) return
 
     if (isPanning.current) {
       endPan()
@@ -1510,7 +1614,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
-    if (mode === 'sticker' || mode === 'text') {
+    if (mode === 'sticker' || mode === 'text' || mode === 'template-place') {
       onBoardClick?.(norm)
       return
     }
@@ -1520,7 +1624,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
-    if (mode === 'region-clear') {
+    if (mode === 'region-clear' || mode === 'template-capture') {
       return
     }
 
@@ -1589,7 +1693,7 @@ const Canvas = forwardRef(function Canvas(
       return
     }
 
-    if (mode === 'region-clear') {
+    if (mode === 'region-clear' || mode === 'template-capture') {
       return
     }
 
@@ -1670,6 +1774,8 @@ const Canvas = forwardRef(function Canvas(
       return imageId ? deleteImageById(imageId) : false
     },
     deleteImageById,
+    getPublicCanvasEvents,
+    publishPublicEvents,
   }), [
     importImageFile,
     clearBoard,
@@ -1677,6 +1783,8 @@ const Canvas = forwardRef(function Canvas(
     getIncognitoState,
     clearSelection,
     deleteImageById,
+    getPublicCanvasEvents,
+    publishPublicEvents,
   ])
 
   return (
@@ -1704,7 +1812,7 @@ const Canvas = forwardRef(function Canvas(
               ? 'cell'
               : mode === 'text'
                 ? 'text'
-              : mode === 'shape' || mode === 'region-clear'
+              : mode === 'shape' || mode === 'region-clear' || mode === 'template-capture'
                 ? 'crosshair'
                 : 'crosshair',
           touchAction: 'none',
@@ -1735,6 +1843,23 @@ const Canvas = forwardRef(function Canvas(
             height: regionClearPreview.height,
             border: '2px dashed #2563eb',
             background: 'rgba(37, 99, 235, 0.12)',
+            pointerEvents: 'none',
+            zIndex: 15,
+          }}
+        />
+      )}
+
+      {templateCapturePreview && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: templateCapturePreview.left,
+            top: templateCapturePreview.top,
+            width: templateCapturePreview.width,
+            height: templateCapturePreview.height,
+            border: '2px dashed #059669',
+            background: 'rgba(5, 150, 105, 0.12)',
             pointerEvents: 'none',
             zIndex: 15,
           }}
