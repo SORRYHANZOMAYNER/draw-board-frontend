@@ -3,6 +3,7 @@ import SockJS from 'sockjs-client'
 import { Client } from '@stomp/stompjs'
 import { WS_BASE } from '../api/config.js'
 import { getToken } from '../api/client.js'
+import { CLIENT_ID } from '../lib/uuid.js'
 
 export function useWebSocket(roomId, onMessage) {
   const clientRef = useRef(null)
@@ -68,7 +69,7 @@ export function useWebSocket(roomId, onMessage) {
 
     client.publish({
       destination: `/app/room/${roomId}/draw`,
-      body: JSON.stringify(event),
+      body: JSON.stringify({ ...event, clientId: CLIENT_ID }),
     })
     return true
   }, [roomId])

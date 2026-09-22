@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.git/
+.idea/
+*.md
+docker-compose.ymlconfig.js

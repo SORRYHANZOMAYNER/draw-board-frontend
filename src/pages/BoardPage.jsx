@@ -53,6 +53,7 @@ import {
 } from '../api/templates.js'
 import { MAX_TEMPLATES_PER_TEACHER, MAX_TEMPLATE_NAME_LENGTH } from '../constants/templates.js'
 import { WORLD_WIDTH, WORLD_HEIGHT, MIN_SHAPE_SIZE } from '../constants/board.js'
+import { uuid, CLIENT_ID } from '../lib/uuid.js'
 import '../styles/BoardPage.css'
 
 function normalizeStickerFields(event, previous = null) {
@@ -570,6 +571,8 @@ export default function BoardPage() {
   }, [])
 
   const onMessage = useCallback((event) => {
+    if (event.clientId === CLIENT_ID) return
+
     if (event.templateInstanceId || event.type?.startsWith('TEMPLATE_')) {
       const instance = rememberTemplateMember(event)
       if (event.type === 'TEMPLATE_GROUP_CREATE' && instance) {
@@ -635,7 +638,7 @@ export default function BoardPage() {
     if (event.type === 'IMAGE_ADD') {
       return apiJson(`/room/${roomId}/events`, {
         method: 'POST',
-        body: JSON.stringify(event),
+        body: JSON.stringify({ ...event, clientId: CLIENT_ID }),
       })
         .then(() => true)
         .catch((error) => {
@@ -1484,7 +1487,7 @@ export default function BoardPage() {
     }
 
     if (mode === 'sticker') {
-      const stickerId = crypto.randomUUID()
+      const stickerId = uuid()
       const color = STICKER_COLORS[stickersRef.current.size % STICKER_COLORS.length]
       const event = {
         type: 'STICKER_ADD',
@@ -1508,7 +1511,7 @@ export default function BoardPage() {
 
     if (mode === 'text') {
       const zoom = camera.zoom > 0 ? camera.zoom : 0.01
-      const textId = crypto.randomUUID()
+      const textId = uuid()
       const event = {
         type: 'TEXT_ADD',
         textId,

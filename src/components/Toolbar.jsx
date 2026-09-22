@@ -200,6 +200,8 @@ export default function Toolbar({
 }) {
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shapesOpen, setShapesOpen] = useState(false)
+  const [paletteAnchor, setPaletteAnchor] = useState(0)
+  const [shapesAnchor, setShapesAnchor] = useState(0)
 
   const handleToolClick = (tool) => {
     if (tool.action && tool.id === 'image') {
@@ -215,12 +217,21 @@ export default function Toolbar({
     if (tool.id === 'reset') onResetView?.()
   }
 
-  const togglePalette = () => {
+  const popupAnchorTop = (e) => {
+    const toolbar = e.currentTarget.closest('.toolbar')
+    if (!toolbar) return 0
+    const rect = e.currentTarget.getBoundingClientRect()
+    return rect.top - toolbar.getBoundingClientRect().top + rect.height / 2
+  }
+
+  const togglePalette = (e) => {
+    if (!paletteOpen) setPaletteAnchor(popupAnchorTop(e))
     setPaletteOpen((open) => !open)
     setShapesOpen(false)
   }
 
-  const toggleShapes = () => {
+  const toggleShapes = (e) => {
+    if (!shapesOpen) setShapesAnchor(popupAnchorTop(e))
     setShapesOpen((open) => !open)
     setPaletteOpen(false)
   }
@@ -239,6 +250,7 @@ export default function Toolbar({
 
   return (
     <aside className="toolbar" aria-label="Панель инструментов">
+      <div className="toolbar-scroll">
       <div className="toolbar-group">
         {TOOLS.map((tool) => (
           <button
@@ -283,25 +295,6 @@ export default function Toolbar({
           >
             <ShapesIcon />
           </button>
-
-          {shapesOpen && (
-            <div className="toolbar-shapes-popup" role="menu" aria-label="Выбор фигуры">
-              {SHAPE_TOOLS.map((shape) => (
-                <button
-                  key={shape.id}
-                  type="button"
-                  role="menuitemradio"
-                  className={`toolbar-shape-btn${shapeType === shape.id ? ' active' : ''}`}
-                  title={shape.title}
-                  aria-label={shape.title}
-                  aria-checked={shapeType === shape.id}
-                  onClick={() => handleShapeSelect(shape.id)}
-                >
-                  <ShapeToolIcon type={shape.id} />
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="toolbar-palette-wrap">
@@ -316,24 +309,6 @@ export default function Toolbar({
           >
             <PaletteIcon color={strokeColor} />
           </button>
-
-          {paletteOpen && (
-            <div className="toolbar-palette-popup" role="menu" aria-label="Выбор цвета">
-              {DRAW_COLORS.map((color) => (
-                <button
-                  key={color}
-                  type="button"
-                  role="menuitemradio"
-                  className={`toolbar-color-swatch${strokeColor === color ? ' active' : ''}`}
-                  title={`Цвет ${color}`}
-                  aria-label={`Цвет ${color}`}
-                  aria-checked={strokeColor === color}
-                  style={{ backgroundColor: color }}
-                  onClick={() => handleColorSelect(color)}
-                />
-              ))}
-            </div>
-          )}
         </div>
 
         <button
@@ -408,6 +383,54 @@ export default function Toolbar({
           </button>
         ))}
       </div>
+      </div>
+
+      {shapesOpen && (
+        <div
+          className="toolbar-shapes-popup"
+          style={{ top: shapesAnchor }}
+          role="menu"
+          aria-label="Выбор фигуры"
+        >
+          {SHAPE_TOOLS.map((shape) => (
+            <button
+              key={shape.id}
+              type="button"
+              role="menuitemradio"
+              className={`toolbar-shape-btn${shapeType === shape.id ? ' active' : ''}`}
+              title={shape.title}
+              aria-label={shape.title}
+              aria-checked={shapeType === shape.id}
+              onClick={() => handleShapeSelect(shape.id)}
+            >
+              <ShapeToolIcon type={shape.id} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {paletteOpen && (
+        <div
+          className="toolbar-palette-popup"
+          style={{ top: paletteAnchor }}
+          role="menu"
+          aria-label="Выбор цвета"
+        >
+          {DRAW_COLORS.map((color) => (
+            <button
+              key={color}
+              type="button"
+              role="menuitemradio"
+              className={`toolbar-color-swatch${strokeColor === color ? ' active' : ''}`}
+              title={`Цвет ${color}`}
+              aria-label={`Цвет ${color}`}
+              aria-checked={strokeColor === color}
+              style={{ backgroundColor: color }}
+              onClick={() => handleColorSelect(color)}
+            />
+          ))}
+        </div>
+      )}
     </aside>
   )
 }

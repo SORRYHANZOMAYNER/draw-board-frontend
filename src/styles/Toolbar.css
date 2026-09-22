@@ -6,12 +6,29 @@
   z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  max-height: calc(100% - 24px);
   background: #fff;
   border-radius: 12px;
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12);
   padding: 8px;
   user-select: none;
+}
+
+.toolbar-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.toolbar-scroll::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .toolbar-group {
@@ -30,6 +47,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 40px;
   height: 40px;
   border: 2px solid transparent;

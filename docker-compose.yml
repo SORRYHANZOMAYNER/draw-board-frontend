@@ -1,0 +1,12 @@
+services:
+  drawboard-frontend:
+    image: drawboard-frontend:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: drawboard-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_URL: http://drawboard-backend:5465
+    ports:
+      - "${FRONTEND_PORT:-80}:80"

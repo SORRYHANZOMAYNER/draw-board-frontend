@@ -7,6 +7,7 @@ import {
   imageDimensionsForZoom,
 } from '../constants/board.js'
 import { buildCanvasStateFromEvents, mergeCanvasStates, normalizeRect } from '../lib/canvasClear.js'
+import { uuid } from '../lib/uuid.js'
 import {
   drawShape,
   drawShapeSelection,
@@ -1000,7 +1001,7 @@ const Canvas = forwardRef(function Canvas(
     if (isShapeLargeEnough(shapeProps, shapeTypeRef.current) && shapeTypeRef.current) {
       const event = {
         type: 'SHAPE_ADD',
-        shapeId: crypto.randomUUID(),
+        shapeId: uuid(),
         shapeType: shapeTypeRef.current,
         ...shapeProps,
         color: strokeColorRef.current,
@@ -1147,7 +1148,7 @@ const Canvas = forwardRef(function Canvas(
 
     const event = {
       type: 'IMAGE_ADD',
-      imageId: crypto.randomUUID(),
+      imageId: uuid(),
       x: centerWorld.x / WORLD_WIDTH - imageWidth / 2,
       y: centerWorld.y / WORLD_HEIGHT - imageHeight / 2,
       imageWidth,
@@ -1485,7 +1486,7 @@ const Canvas = forwardRef(function Canvas(
     }
 
     isDrawing.current = true
-    strokeId.current = crypto.randomUUID()
+    strokeId.current = uuid()
 
     const event = {
       type: 'STROKE_START',
@@ -1629,7 +1630,7 @@ const Canvas = forwardRef(function Canvas(
     }
 
     isDrawing.current = true
-    strokeId.current = crypto.randomUUID()
+    strokeId.current = uuid()
     const event = {
       type: 'STROKE_START',
       strokeId: strokeId.current,
@@ -1663,10 +1664,14 @@ const Canvas = forwardRef(function Canvas(
 
       const dist = getTouchDistance(e.touches)
       if (lastTouchDistance.current) {
-        cameraRef.current.zoom = Math.min(
-          5,
-          Math.max(0.02, cameraRef.current.zoom * (dist / lastTouchDistance.current))
-        )
+        const cam = cameraRef.current
+        const cx = (center.x - rect.left) * scaleX
+        const cy = (center.y - rect.top) * scaleY
+        const worldX = cam.x + cx / cam.zoom
+        const worldY = cam.y + cy / cam.zoom
+        cam.zoom = Math.min(5, Math.max(0.02, cam.zoom * (dist / lastTouchDistance.current)))
+        cam.x = worldX - cx / cam.zoom
+        cam.y = worldY - cy / cam.zoom
       }
 
       lastPanPoint.current = center

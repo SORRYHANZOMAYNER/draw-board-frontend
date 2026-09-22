@@ -8,6 +8,7 @@ import {
 } from './canvasClear.js'
 import { shapeIntersectsRect } from './shapeDraw.js'
 import { rasterizeStrokesInRect } from './templateRasterize.js'
+import { uuid } from './uuid.js'
 import { MIN_SHAPE_SIZE } from '../constants/board.js'
 
 function relX(value, rect) {
@@ -63,7 +64,7 @@ export function extractTemplateForApi(publicCanvasEvents, stickersMap, textsMap,
   if (strokeRaster) {
     events.unshift({
       type: 'IMAGE_ADD',
-      imageId: crypto.randomUUID(),
+      imageId: uuid(),
       x: 0,
       y: 0,
       imageWidth: rect.width,
@@ -76,7 +77,7 @@ export function extractTemplateForApi(publicCanvasEvents, stickersMap, textsMap,
     if (!shapeIntersectsRect(shape, rect)) continue
     events.push({
       type: 'SHAPE_ADD',
-      shapeId: crypto.randomUUID(),
+      shapeId: uuid(),
       shapeType: shape.shapeType,
       x: relX(shape.x, rect),
       y: relY(shape.y, rect),
@@ -91,7 +92,7 @@ export function extractTemplateForApi(publicCanvasEvents, stickersMap, textsMap,
     if (!imageIntersectsRect(img, rect) || !img.data) continue
     events.push({
       type: 'IMAGE_ADD',
-      imageId: crypto.randomUUID(),
+      imageId: uuid(),
       x: relX(img.x, rect),
       y: relY(img.y, rect),
       imageWidth: img.imageWidth,
@@ -104,7 +105,7 @@ export function extractTemplateForApi(publicCanvasEvents, stickersMap, textsMap,
     if (!stickerIntersectsRect(sticker, rect)) continue
     events.push({
       type: 'STICKER_ADD',
-      stickerId: crypto.randomUUID(),
+      stickerId: uuid(),
       x: relX(sticker.x, rect),
       y: relY(sticker.y, rect),
       width: sticker.width,
@@ -118,7 +119,7 @@ export function extractTemplateForApi(publicCanvasEvents, stickersMap, textsMap,
     if (!textIntersectsRect(text, rect)) continue
     events.push({
       type: 'TEXT_ADD',
-      textId: crypto.randomUUID(),
+      textId: uuid(),
       x: relX(text.x, rect),
       y: relY(text.y, rect),
       width: text.width,

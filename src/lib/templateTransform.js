@@ -1,4 +1,5 @@
 import { WORLD_HEIGHT } from '../constants/board.js'
+import { uuid } from './uuid.js'
 
 export function denormalizeRect(targetRect) {
   return targetRect
@@ -24,14 +25,14 @@ export function createIdRemapper() {
     id(prefix) {
       const key = prefix
       if (!map.has(key)) {
-        map.set(key, crypto.randomUUID())
+        map.set(key, uuid())
       }
       return map.get(key)
     },
     idForIndex(prefix, index) {
       const key = `${prefix}:${index}`
       if (!map.has(key)) {
-        map.set(key, crypto.randomUUID())
+        map.set(key, uuid())
       }
       return map.get(key)
     },
