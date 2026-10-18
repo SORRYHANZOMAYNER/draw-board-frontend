@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Search, Users } from 'lucide-react'
+import { BookOpen, Plus, Search } from 'lucide-react'
 import { apiJson } from '../api/client.js'
 import AppHeader from '../components/AppHeader.jsx'
 import RoomCard from '../components/RoomCard.jsx'
@@ -40,12 +40,27 @@ export default function TeacherDashboard() {
 
   const [selectedStudent, setSelectedStudent] = useState(null)
   const [rooms, setRooms] = useState([])
-  const [roomsLoading, setRoomsLoading] = useState(false)
+  const [roomsLoading, setRoomsLoading] = useState(true)
   const [roomsError, setRoomsError] = useState('')
 
   const [newRoomName, setNewRoomName] = useState('')
   const [creating, setCreating] = useState(false)
   const [actionError, setActionError] = useState('')
+
+  const loadMyRooms = useCallback(async () => {
+    setRoomsError('')
+    setRoomsLoading(true)
+
+    try {
+      const data = await apiJson('/room/mine')
+      setRooms(Array.isArray(data) ? data : [])
+    } catch (err) {
+      setRoomsError(err.message || 'Не удалось загрузить ваши блокноты')
+      setRooms([])
+    } finally {
+      setRoomsLoading(false)
+    }
+  }, [])
 
   const loadStudentRooms = useCallback(async (studentId) => {
     setRoomsError('')
@@ -82,6 +97,18 @@ export default function TeacherDashboard() {
     setRoomsError('')
     loadStudentRooms(normalized.id)
   }, [loadStudentRooms])
+
+  const showMyRooms = useCallback(() => {
+    setSelectedStudent(null)
+    setNewRoomName('')
+    setActionError('')
+    setRoomsError('')
+    loadMyRooms()
+  }, [loadMyRooms])
+
+  useEffect(() => {
+    loadMyRooms()
+  }, [loadMyRooms])
 
   useEffect(() => {
     if (searchTimerRef.current) {
@@ -132,23 +159,30 @@ export default function TeacherDashboard() {
     setRooms((prev) => prev.filter((room) => room.id !== deletedRoom.id))
   }, [])
 
-  const createRoomForStudent = async (event) => {
+  const createRoom = async (event) => {
     event.preventDefault()
 
     const studentId = getStudentId(selectedStudent)
-    if (studentId == null) return
+    if (selectedStudent && studentId == null) return
 
-    const name = newRoomName.trim() || 'Новый блокнот'
+    const name = newRoomName.trim() || (selectedStudent ? 'Новый блокнот' : 'Пробная доска')
+    const endpoint = selectedStudent
+      ? `/room/students/${studentId}/rooms`
+      : '/room'
     setCreating(true)
     setActionError('')
 
     try {
-      const room = await apiJson(`/room/students/${studentId}/rooms`, {
+      const room = await apiJson(endpoint, {
         method: 'POST',
         body: JSON.stringify({ name }),
       })
       setNewRoomName('')
-      await loadStudentRooms(studentId)
+      if (selectedStudent) {
+        await loadStudentRooms(studentId)
+      } else {
+        await loadMyRooms()
+      }
       navigate(`/board/${room.id}`)
     } catch (err) {
       setActionError(err.message || 'Не удалось создать блокнот')
@@ -162,126 +196,148 @@ export default function TeacherDashboard() {
       <AppHeader title="Кабинет учителя" />
 
       <main className="mx-auto grid max-w-6xl gap-6 px-4 py-6 lg:grid-cols-[320px_1fr] sm:px-6">
-        <Card>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="size-4" />
+                Мои блокноты
+              </CardTitle>
+              <CardDescription>Личные доски для подготовки и проверки функций</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                type="button"
+                variant={selectedStudent ? 'outline' : 'default'}
+                className="w-full"
+                onClick={showMyRooms}
+              >
+                Открыть мои блокноты
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Search className="size-4" />
+                Поиск ученика
+              </CardTitle>
+              <CardDescription>Введите имя и выберите ученика из списка</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Input
+                type="text"
+                placeholder="Введите имя ученика"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+
+              {searching && (
+                <p className="text-sm text-muted-foreground">Поиск...</p>
+              )}
+
+              {searchError && (
+                <Alert variant="destructive">
+                  <AlertDescription>{searchError}</AlertDescription>
+                </Alert>
+              )}
+
+              {!searching && searchQuery.trim() && searchResults.length === 0 && !searchError && (
+                <p className="text-sm text-muted-foreground">Ученики не найдены</p>
+              )}
+
+              {searchResults.length > 0 && (
+                <ul className="space-y-2">
+                  {searchResults.map((student) => (
+                    <li key={student.id}>
+                      <Button
+                        type="button"
+                        variant={selectedStudent?.id === student.id ? 'default' : 'outline'}
+                        className="w-full justify-start"
+                        onClick={() => selectStudent(student)}
+                      >
+                        {student.username}
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <Card className="min-h-[420px]">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Search className="size-4" />
-              Поиск ученика
+            <CardTitle>
+              {selectedStudent
+                ? `Доски ученика: ${selectedStudent.username}`
+                : 'Мои блокноты'}
             </CardTitle>
-            <CardDescription>Введите имя и выберите ученика из списка</CardDescription>
+            <CardDescription>
+              {selectedStudent
+                ? 'Управление блокнотами ученика'
+                : 'Создайте личный блокнот, чтобы подготовиться к уроку или проверить доску'}
+            </CardDescription>
           </CardHeader>
+
           <CardContent className="space-y-4">
-            <Input
-              type="text"
-              placeholder="Введите имя ученика"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
+            <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createRoom}>
+              <Input
+                className="sm:flex-1"
+                type="text"
+                placeholder="Название блокнота"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                disabled={creating}
+              />
+              <Button type="submit" disabled={creating} className="sm:min-w-40">
+                <Plus data-icon="inline-start" />
+                {creating ? 'Создание...' : 'Создать блокнот'}
+              </Button>
+            </form>
 
-            {searching && (
-              <p className="text-sm text-muted-foreground">Поиск...</p>
-            )}
-
-            {searchError && (
+            {actionError && (
               <Alert variant="destructive">
-                <AlertDescription>{searchError}</AlertDescription>
+                <AlertDescription>{actionError}</AlertDescription>
               </Alert>
             )}
 
-            {!searching && searchQuery.trim() && searchResults.length === 0 && !searchError && (
-              <p className="text-sm text-muted-foreground">Ученики не найдены</p>
+            {roomsError && (
+              <Alert variant="destructive">
+                <AlertDescription>{roomsError}</AlertDescription>
+              </Alert>
             )}
 
-            {searchResults.length > 0 && (
-              <ul className="space-y-2">
-                {searchResults.map((student) => (
-                  <li key={student.id}>
-                    <Button
-                      type="button"
-                      variant={selectedStudent?.id === student.id ? 'default' : 'outline'}
-                      className="w-full justify-start"
-                      onClick={() => selectStudent(student)}
-                    >
-                      {student.username}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="min-h-[420px]">
-          {!selectedStudent ? (
-            <CardContent className="flex h-full flex-col items-center justify-center gap-3 py-16 text-center">
-              <Users className="size-12 text-muted-foreground/50" />
-              <div className="space-y-1">
-                <p className="font-medium">Найдите ученика по имени</p>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  После выбора вы увидите его доски и сможете создать новый блокнот
+            {roomsLoading ? (
+              <p className="text-sm text-muted-foreground">Загрузка блокнотов...</p>
+            ) : rooms.length === 0 ? (
+              <div className="rounded-lg border border-dashed p-8 text-center">
+                <p className="font-medium">
+                  {selectedStudent
+                    ? 'У ученика пока нет блокнотов'
+                    : 'У вас пока нет личных блокнотов'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {selectedStudent
+                    ? 'Создайте первый блокнот для него'
+                    : 'Создайте пробный блокнот и познакомьтесь с возможностями доски'}
                 </p>
               </div>
-            </CardContent>
-          ) : (
-            <>
-              <CardHeader>
-                <CardTitle>Доски ученика: {selectedStudent.username}</CardTitle>
-                <CardDescription>Управление блокнотами ученика</CardDescription>
-              </CardHeader>
-
-              <CardContent className="space-y-4">
-                <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createRoomForStudent}>
-                  <Input
-                    className="sm:flex-1"
-                    type="text"
-                    placeholder="Название блокнота"
-                    value={newRoomName}
-                    onChange={(e) => setNewRoomName(e.target.value)}
-                    disabled={creating}
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {rooms.map((room) => (
+                  <RoomCard
+                    key={room.id}
+                    room={room}
+                    onOpen={(r) => navigate(`/board/${r.id}`)}
+                    onRenamed={handleRoomRenamed}
+                    onDeleted={handleRoomDeleted}
                   />
-                  <Button type="submit" disabled={creating} className="sm:min-w-40">
-                    <Plus data-icon="inline-start" />
-                    {creating ? 'Создание...' : 'Создать блокнот'}
-                  </Button>
-                </form>
-
-                {actionError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{actionError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {roomsError && (
-                  <Alert variant="destructive">
-                    <AlertDescription>{roomsError}</AlertDescription>
-                  </Alert>
-                )}
-
-                {roomsLoading ? (
-                  <p className="text-sm text-muted-foreground">Загрузка досок...</p>
-                ) : rooms.length === 0 ? (
-                  <div className="rounded-lg border border-dashed p-8 text-center">
-                    <p className="font-medium">У ученика пока нет досок</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Создайте первый блокнот для него
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {rooms.map((room) => (
-                      <RoomCard
-                        key={room.id}
-                        room={room}
-                        onOpen={(r) => navigate(`/board/${r.id}`)}
-                        onRenamed={handleRoomRenamed}
-                        onDeleted={handleRoomDeleted}
-                      />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </>
-          )}
+                ))}
+              </div>
+            )}
+          </CardContent>
         </Card>
       </main>
     </div>
